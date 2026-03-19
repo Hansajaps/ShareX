@@ -1,0 +1,10 @@
+com\sharex\Application$1.class
+com\sharex\replication\ClusterConfig.class
+com\sharex\server\UIController.class
+com\sharex\replication\ServerConfig.class
+com\sharex\server\FileService.class
+com\sharex\server\FileServiceImpl.class
+com\sharex\Application.class
+com\sharex\replication\ReplicaClient.class
+com\sharex\server\FileController.class
+com\sharex\zookeeper\ZooKeeperService.class
