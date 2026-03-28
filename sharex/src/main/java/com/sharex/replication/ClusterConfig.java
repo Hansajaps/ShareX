@@ -1,5 +1,6 @@
 package com.sharex.replication;
 
+import com.sharex.zookeeper.ZooKeeperService;
 import java.util.*;
 
 /**
@@ -10,6 +11,7 @@ public class ClusterConfig {
     private ServerConfig currentServer;      // This server's configuration
     private List<ServerConfig> allServers;   // All servers in the cluster
     private Map<String, ServerConfig> serverById; // Quick lookup by server ID
+    private ZooKeeperService zooKeeperService; // ZooKeeper service for leader election
 
     public ClusterConfig(ServerConfig currentServer, List<ServerConfig> allServers) {
         this.currentServer = currentServer;
@@ -19,17 +21,30 @@ public class ClusterConfig {
             serverById.put(server.getServerId(), server);
         }
     }
+    
+    public ClusterConfig(ServerConfig currentServer, List<ServerConfig> allServers, ZooKeeperService zooKeeperService) {
+        this(currentServer, allServers);
+        this.zooKeeperService = zooKeeperService;
+    }
 
     /**
      * Get the leader/primary server.
-     * Currently assumes the first server in the cluster is the leader.
-     * In a real system, this would be determined by a consensus algorithm.
+     * Uses ZooKeeper for dynamic leader election if available, otherwise falls back to hardcoded logic.
      */
     public ServerConfig getLeader() {
+        if (zooKeeperService != null && zooKeeperService.isConnected()) {
+            String leaderId = zooKeeperService.getLeader();
+            ServerConfig leader = serverById.get(leaderId);
+            if (leader != null) {
+                return leader;
+            }
+        }
+        
+        // Fallback: assume the first server in the cluster is the leader
         return allServers.stream()
                 .filter(ServerConfig::isLeader)
                 .findFirst()
-                .orElse(allServers.get(0)); // Fallback: first server is leader
+                .orElse(allServers.get(0));
     }
 
     /**
@@ -45,6 +60,11 @@ public class ClusterConfig {
      * Check if current server is the leader.
      */
     public boolean isCurrentServerLeader() {
+        if (zooKeeperService != null && zooKeeperService.isConnected()) {
+            return zooKeeperService.isCurrentServerLeader();
+        }
+        
+        // Fallback to static configuration
         return currentServer.isLeader();
     }
 

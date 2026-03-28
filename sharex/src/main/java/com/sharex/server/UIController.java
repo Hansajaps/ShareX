@@ -212,6 +212,29 @@ public class UIController {
     }
 
     /**
+     * Get current leader information
+     * GET /api/leader
+     * 
+     * Clients can use this endpoint to discover the current leader
+     */
+    @GetMapping("/api/leader")
+    public ResponseEntity<?> getLeaderInfo() {
+        try {
+            ServerConfig leader = clusterConfig.getLeader();
+            return ResponseEntity.ok(Map.of(
+                    "leaderId", leader.getServerId(),
+                    "leaderUrl", leader.getBaseUrl(),
+                    "currentServer", clusterConfig.getCurrentServer().getServerId(),
+                    "isCurrentServerLeader", clusterConfig.isCurrentServerLeader()
+            ));
+        } catch (Exception e) {
+            logger.error("Failed to get leader info", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Failed to get leader info"));
+        }
+    }
+
+    /**
      * Get system info
      * GET /api/info
      */

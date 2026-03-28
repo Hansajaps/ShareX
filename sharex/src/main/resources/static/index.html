@@ -53,6 +53,22 @@
             margin-bottom: 30px;
         }
 
+        .cluster-status {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-item {
+            font-size: 0.9em;
+            color: #333;
+        }
+
         .server-card {
             background: white;
             padding: 20px;
@@ -361,6 +377,10 @@
             <!-- Server status cards will be inserted here -->
         </div>
 
+        <div class="cluster-status" id="clusterStatus">
+            <!-- Current leader and cluster info will be displayed here -->
+        </div>
+
         <div class="main-content">
             <!-- Upload Card -->
             <div class="card">
@@ -442,14 +462,60 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8081';
+        const API_BASE = 'http://localhost:8081'; // Default fallback
+        let currentLeaderUrl = API_BASE;
+
+        // Function to discover and update the current leader
+        async function updateLeader() {
+            try {
+                // Try each server to find the current leader
+                const servers = ['http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'];
+                
+                for (const serverUrl of servers) {
+                    try {
+                        const response = await fetch(`${serverUrl}/api/leader`, { timeout: 2000 });
+                        if (response.ok) {
+                            const data = await response.json();
+                            currentLeaderUrl = data.leaderUrl;
+                            updateStatusDisplay(data);
+                            return;
+                        }
+                    } catch (e) {
+                        // Server not available, try next
+                        continue;
+                    }
+                }
+                
+                // If no server responded, keep current setting
+                console.warn('Could not reach any server to determine leader');
+            } catch (error) {
+                console.error('Error updating leader:', error);
+            }
+        }
+
+        // Update the status display with leader information
+        function updateStatusDisplay(leaderData) {
+            const statusDiv = document.getElementById('clusterStatus');
+            if (statusDiv && leaderData) {
+                statusDiv.innerHTML = `
+                    <div class="status-item">
+                        <strong>Current Leader:</strong> ${leaderData.leaderId} (${leaderData.leaderUrl})
+                    </div>
+                    <div class="status-item">
+                        <strong>This Server:</strong> ${leaderData.currentServer} ${leaderData.isCurrentServerLeader ? '(LEADER)' : '(FOLLOWER)'}
+                    </div>
+                `;
+            }
+        }
         const FOLLOWERS = ['http://localhost:8082', 'http://localhost:8083'];
 
         // Initialize the UI
         window.onload = function() {
+            updateLeader(); // Discover current leader
             updateServerStatus();
             refreshFileList();
             updateSystemInfo();
+            setInterval(updateLeader, 3000); // Check leader every 3 seconds
             setInterval(updateServerStatus, 5000); // Refresh every 5 seconds
             setInterval(refreshFileList, 10000); // Refresh files every 10 seconds
             setInterval(updateSystemInfo, 5000); // Refresh system info every 5 seconds
@@ -501,7 +567,7 @@
             });
         }
 
-        function uploadFile() {
+        async function uploadFile() {
             const fileInput = document.getElementById('fileInput');
             const messageDiv = document.getElementById('uploadMessage');
             
@@ -518,29 +584,45 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="loading"></span> Uploading...';
 
-            fetch(`${API_BASE}/upload?file=${encodeURIComponent(file.name)}`, {
-                method: 'POST',
-                body: formData
-            })
-            .then(r => {
-                if (r.status === 403) {
-                    throw new Error('Only the leader (Server 1) accepts writes');
+            try {
+                // First, ensure we have the current leader
+                await updateLeader();
+                
+                // Attempt upload to current leader
+                let response = await fetch(`${currentLeaderUrl}/upload?file=${encodeURIComponent(file.name)}`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.status === 403) {
+                    // This server is not the leader, try to find the real leader
+                    showMessage(messageDiv, 'Finding current leader...', 'info');
+                    await updateLeader();
+                    
+                    if (currentLeaderUrl !== 'http://localhost:8081') { // Avoid infinite loop
+                        response = await fetch(`${currentLeaderUrl}/upload?file=${encodeURIComponent(file.name)}`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                    } else {
+                        throw new Error('No leader available yet for writes');
+                    }
                 }
-                if (!r.ok) throw new Error('Upload failed');
-                return r.json();
-            })
-            .then(data => {
+
+                if (!response.ok) throw new Error('Upload failed');
+                
+                const data = await response.json();
                 showMessage(messageDiv, `File "${file.name}" uploaded and replicated to all servers!`, 'success');
                 fileInput.value = '';
                 refreshFileList();
-            })
-            .catch(err => {
+                updateLeader(); // Refresh leader info after successful upload
+                
+            } catch (err) {
                 showMessage(messageDiv, `Error: ${err.message}`, 'error');
-            })
-            .finally(() => {
+            } finally {
                 btn.disabled = false;
                 btn.innerHTML = 'Upload to Leader';
-            });
+            }
         }
 
         function downloadFile() {
