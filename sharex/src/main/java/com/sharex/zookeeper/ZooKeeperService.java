@@ -26,6 +26,7 @@ public class ZooKeeperService {
     private static final String LEADER_PATH = "/sharex/leader";
     private static final String ELECTION_PATH = "/sharex/election";
     private static final String FILES_PATH = "/sharex/files";
+    private static final String SERVER_SYNC_PATH = "/sharex/server-sync";
     
     // ZooKeeper connection string for 3-node cluster
     // If only one ZooKeeper is running, it will default to localhost:2181
@@ -39,6 +40,14 @@ public class ZooKeeperService {
     private LeaderSelector leaderSelector;
     private AtomicBoolean isLeader = new AtomicBoolean(false);
     private LeaderElectionCallback leaderCallback;
+    private ServerSyncCallback syncCallback;
+    
+    /**
+     * Callback interface for server sync/online events
+     */
+    public interface ServerSyncCallback {
+        void onServerOnline(String serverId);
+    }
     
     /**
      * Callback interface for leader election events
@@ -57,6 +66,13 @@ public class ZooKeeperService {
         this.serverId = serverId;
         this.serverPort = serverPort;
         this.leaderCallback = callback;
+    }
+    
+    public ZooKeeperService(String serverId, int serverPort, LeaderElectionCallback leaderCallback, ServerSyncCallback syncCallback) {
+        this.serverId = serverId;
+        this.serverPort = serverPort;
+        this.leaderCallback = leaderCallback;
+        this.syncCallback = syncCallback;
     }
     
     /**
@@ -84,6 +100,7 @@ public class ZooKeeperService {
             createPathIfNotExists(LEADER_PATH);
             createPathIfNotExists(ELECTION_PATH);
             createPathIfNotExists(FILES_PATH);
+            createPathIfNotExists(SERVER_SYNC_PATH);
             
             // Register this server
             registerServer();
@@ -136,6 +153,7 @@ public class ZooKeeperService {
             createPathIfNotExists(LEADER_PATH);
             createPathIfNotExists(ELECTION_PATH);
             createPathIfNotExists(FILES_PATH);
+            createPathIfNotExists(SERVER_SYNC_PATH);
             
             registerServer();
             startLeaderElection();
@@ -415,6 +433,69 @@ public class ZooKeeperService {
             logger.debug("Error checking leader node existence: {}", e.getMessage());
             return true;
         }
+    }
+
+    /**
+     * Register this server as requiring sync (call after connecting/coming online)
+     * Used to notify the leader to synchronize missing files
+     */
+    public void registerServerForSync() {
+        if (!zkConnected) return;
+        
+        try {
+            String syncPath = SERVER_SYNC_PATH + "/" + serverId;
+            String syncData = String.valueOf(System.currentTimeMillis());
+            
+            if (client.checkExists().forPath(syncPath) != null) {
+                client.setData().forPath(syncPath, syncData.getBytes(StandardCharsets.UTF_8));
+            } else {
+                client.create().forPath(syncPath, syncData.getBytes(StandardCharsets.UTF_8));
+            }
+            
+            logger.info("Server {} registered for sync", serverId);
+        } catch (Exception e) {
+            logger.debug("Could not register server for sync in ZooKeeper", e);
+        }
+    }
+    
+    /**
+     * Get servers registered for sync (servers that need file synchronization)
+     */
+    public List<String> getServersRequiringSync() {
+        if (!zkConnected) return new ArrayList<>();
+        
+        try {
+            if (client.checkExists().forPath(SERVER_SYNC_PATH) != null) {
+                return client.getChildren().forPath(SERVER_SYNC_PATH);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not get servers requiring sync from ZooKeeper", e);
+        }
+        return new ArrayList<>();
+    }
+    
+    /**
+     * Remove server from sync registry (call after sync completion)
+     */
+    public void unregisterServerFromSync(String serverId) {
+        if (!zkConnected) return;
+        
+        try {
+            String syncPath = SERVER_SYNC_PATH + "/" + serverId;
+            if (client.checkExists().forPath(syncPath) != null) {
+                client.delete().forPath(syncPath);
+                logger.info("Server {} removed from sync registry", serverId);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not unregister server from sync in ZooKeeper", e);
+        }
+    }
+    
+    /**
+     * Set the sync callback
+     */
+    public void setSyncCallback(ServerSyncCallback callback) {
+        this.syncCallback = callback;
     }
 
     /**

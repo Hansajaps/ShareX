@@ -10,6 +10,7 @@ import com.sharex.server.FileServiceImpl;
 import com.sharex.replication.ClusterConfig;
 import com.sharex.replication.ServerConfig;
 import com.sharex.zookeeper.ZooKeeperService;
+import com.sharex.sync.ServerSyncService;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
