@@ -34,6 +34,9 @@ public class Application {
         // Parse command-line argument to determine which server to start
         if (args.length > 0) {
             currentServerId = args[0];
+        } else {
+            // Default to server1 if no argument provided
+            currentServerId = "server1";
         }
 
         System.out.println("=====================================");
@@ -102,7 +105,7 @@ public class Application {
      * This allows each server to know about the other servers.
      */
     @Bean
-    public ClusterConfig clusterConfig(ServerConfig currentServerConfig) {
+    public ClusterConfig clusterConfig(ServerConfig currentServerConfig, ZooKeeperService zooKeeperService) {
         List<ServerConfig> allServers = new ArrayList<>();
 
         // Define all servers in the cluster
@@ -110,9 +113,10 @@ public class Application {
         allServers.add(new ServerConfig("server2", 8082, "localhost", getStoragePath("server2"), false));
         allServers.add(new ServerConfig("server3", 8083, "localhost", getStoragePath("server3"), false));
 
-        ClusterConfig config = new ClusterConfig(currentServerConfig, allServers);
+        ClusterConfig config = new ClusterConfig(currentServerConfig, allServers, zooKeeperService);
         System.out.println("\nCluster Configuration:");
-        System.out.println("  Leader: " + config.getLeader().getServerId());
+        System.out.println("  Current Server: " + currentServerConfig.getServerId());
+        System.out.println("  Initial Leader: " + config.getLeader().getServerId());
         System.out.println("  Followers: " + config.getFollowers().stream()
                 .map(ServerConfig::getServerId)
                 .toList());
@@ -135,7 +139,19 @@ public class Application {
      */
     @Bean
     public ZooKeeperService zooKeeperService(ServerConfig serverConfig) {
-        ZooKeeperService service = new ZooKeeperService(serverConfig.getServerId(), serverConfig.getPort());
+        ZooKeeperService.LeaderElectionCallback callback = new ZooKeeperService.LeaderElectionCallback() {
+            @Override
+            public void onLeadershipGained() {
+                System.out.println("🎯 Server " + serverConfig.getServerId() + " has gained leadership!");
+            }
+            
+            @Override
+            public void onLeadershipLost() {
+                System.out.println("💔 Server " + serverConfig.getServerId() + " has lost leadership!");
+            }
+        };
+        
+        ZooKeeperService service = new ZooKeeperService(serverConfig.getServerId(), serverConfig.getPort(), callback);
         service.start();
         return service;
     }
