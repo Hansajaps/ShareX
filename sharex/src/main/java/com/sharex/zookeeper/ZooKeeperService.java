@@ -455,6 +455,69 @@ public class ZooKeeperService {
     }
 
     /**
+     * Register this server as requiring sync (call after connecting/coming online)
+     * Used to notify the leader to synchronize missing files
+     */
+    public void registerServerForSync() {
+        if (!zkConnected) return;
+        
+        try {
+            String syncPath = SERVER_SYNC_PATH + "/" + serverId;
+            String syncData = String.valueOf(System.currentTimeMillis());
+            
+            if (client.checkExists().forPath(syncPath) != null) {
+                client.setData().forPath(syncPath, syncData.getBytes(StandardCharsets.UTF_8));
+            } else {
+                client.create().forPath(syncPath, syncData.getBytes(StandardCharsets.UTF_8));
+            }
+            
+            logger.info("Server {} registered for sync", serverId);
+        } catch (Exception e) {
+            logger.debug("Could not register server for sync in ZooKeeper", e);
+        }
+    }
+    
+    /**
+     * Get servers registered for sync (servers that need file synchronization)
+     */
+    public List<String> getServersRequiringSync() {
+        if (!zkConnected) return new ArrayList<>();
+        
+        try {
+            if (client.checkExists().forPath(SERVER_SYNC_PATH) != null) {
+                return client.getChildren().forPath(SERVER_SYNC_PATH);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not get servers requiring sync from ZooKeeper", e);
+        }
+        return new ArrayList<>();
+    }
+    
+    /**
+     * Remove server from sync registry (call after sync completion)
+     */
+    public void unregisterServerFromSync(String serverId) {
+        if (!zkConnected) return;
+        
+        try {
+            String syncPath = SERVER_SYNC_PATH + "/" + serverId;
+            if (client.checkExists().forPath(syncPath) != null) {
+                client.delete().forPath(syncPath);
+                logger.info("Server {} removed from sync registry", serverId);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not unregister server from sync in ZooKeeper", e);
+        }
+    }
+    
+    /**
+     * Set the sync callback
+     */
+    public void setSyncCallback(ServerSyncCallback callback) {
+        this.syncCallback = callback;
+    }
+
+    /**
      * Close ZooKeeper connection
      */
     public void stop() {
