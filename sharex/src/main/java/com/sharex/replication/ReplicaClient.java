@@ -25,7 +25,8 @@ public class ReplicaClient {
      * @throws Exception if replication fails
      */
     public static void replicateFile(String targetServerUrl, String filename, byte[] fileData) throws Exception {
-        String replicaUrl = targetServerUrl + "/replicate?file=" + filename;
+        String encodedFilename = java.net.URLEncoder.encode(filename, java.nio.charset.StandardCharsets.UTF_8);
+        String replicaUrl = targetServerUrl + "/replicate?file=" + encodedFilename;
         logger.info("Replicating file {} to {}", filename, targetServerUrl);
         
         HttpURLConnection connection = null;
@@ -65,7 +66,8 @@ public class ReplicaClient {
      * Send file deletion request to a remote server via HTTP DELETE.
      */
     public static void deleteFileReplica(String targetServerUrl, String filename) throws Exception {
-        String replicaUrl = targetServerUrl + "/replicate?file=" + filename;
+        String encodedFilename = java.net.URLEncoder.encode(filename, java.nio.charset.StandardCharsets.UTF_8);
+        String replicaUrl = targetServerUrl + "/replicate?file=" + encodedFilename;
         logger.info("Deleting replica of {} from {}", filename, targetServerUrl);
 
         HttpURLConnection connection = null;

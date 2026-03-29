@@ -289,5 +289,53 @@ ShareX integrates with Apache ZooKeeper for distributed coordination and leader 
 - **Dynamic Configuration**: No need to restart servers for configuration changes
 - **Scalability**: Quorum-based consensus
 
+## 🔄 Automatic File Synchronization (NEW!)
+
+### Consistency Guarantee
+✅ **All online servers MUST have all files**
+- When a file is uploaded to any leader, it replicates to ALL other online servers
+- Offline servers receive files automatically when they come back online
+- No server is left behind - full consistency guaranteed
+
+### How It Works
+
+**Upload to Any Leader:**
+1. File uploaded to current leader (whoever is elected)
+2. Leader saves file locally
+3. Leader replicates to **ALL other servers** simultaneously
+4. If server is offline: sync catches it when it comes online
+5. **Result**: All online servers have the file immediately ✅
+
+**Server Comes Back Online:**
+1. Server registers for sync in ZooKeeper
+2. Leader detects it's online
+3. Leader replicates any missing files
+4. Server now has all files ✅
+
+### Example
+```
+Scenario: Server3 is leader, Server2 is offline, Server1 is online
+
+1. Upload file1.txt to leader (server3)
+   → Replicates to server1 ✅ (online)
+   → Fails to replicate to server2 ✗ (offline)
+
+2. Meanwhile, Server1 has file1.txt ✅
+
+3. Server2 comes online
+   → Leader detects server2 is online
+   → Leader replicates file1.txt to server2 ✅
+   
+Result: All 3 servers have file1.txt ✅
+```
+
+### Key Guarantees
+
+✅ **Immediate replication** - Online servers get files instantly  
+✅ **No missed files** - Offline servers sync when they come back  
+✅ **Works with any leader** - Replicates regardless of who is elected  
+✅ **Automatic** - No manual intervention needed  
+✅ **Consistent** - All servers always have all files
+
 
 

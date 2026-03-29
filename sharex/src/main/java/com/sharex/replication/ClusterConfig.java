@@ -8,8 +8,8 @@ import java.util.*;
  * Maintains the list of all servers in the cluster and identifies the leader.
  */
 public class ClusterConfig {
-    private ServerConfig currentServer;      // This server's configuration
-    private List<ServerConfig> allServers;   // All servers in the cluster
+    private ServerConfig currentServer; // This server's configuration
+    private List<ServerConfig> allServers; // All servers in the cluster
     private Map<String, ServerConfig> serverById; // Quick lookup by server ID
     private ZooKeeperService zooKeeperService; // ZooKeeper service for leader election
 
@@ -21,7 +21,7 @@ public class ClusterConfig {
             serverById.put(server.getServerId(), server);
         }
     }
-    
+
     public ClusterConfig(ServerConfig currentServer, List<ServerConfig> allServers, ZooKeeperService zooKeeperService) {
         this(currentServer, allServers);
         this.zooKeeperService = zooKeeperService;
@@ -29,7 +29,8 @@ public class ClusterConfig {
 
     /**
      * Get the leader/primary server.
-     * Uses ZooKeeper for dynamic leader election if available, otherwise falls back to hardcoded logic.
+     * Uses ZooKeeper for dynamic leader election if available, otherwise falls back
+     * to hardcoded logic.
      */
     public ServerConfig getLeader() {
         if (zooKeeperService != null && zooKeeperService.isConnected()) {
@@ -39,20 +40,23 @@ public class ClusterConfig {
                 return leader;
             }
         }
-        
-        // Fallback: assume the first server in the cluster is the leader
+
+        // Fallback: Use the static leader flag if set, otherwise default to current
+        // server
+        // to avoid always returning a potentially dead server1
         return allServers.stream()
                 .filter(ServerConfig::isLeader)
                 .findFirst()
-                .orElse(allServers.get(0));
+                .orElse(currentServer);
     }
 
     /**
      * Get all follower/backup servers (excluding the leader).
      */
     public List<ServerConfig> getFollowers() {
+        ServerConfig leader = getLeader();
         return allServers.stream()
-                .filter(s -> !s.isLeader())
+                .filter(s -> !s.getServerId().equals(leader.getServerId()))
                 .toList();
     }
 
@@ -63,7 +67,7 @@ public class ClusterConfig {
         if (zooKeeperService != null && zooKeeperService.isConnected()) {
             return zooKeeperService.isCurrentServerLeader();
         }
-        
+
         // Fallback to static configuration
         return currentServer.isLeader();
     }
