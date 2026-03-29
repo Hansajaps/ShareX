@@ -22,9 +22,9 @@ import java.util.List;
  * It starts a Spring Boot HTTP server on the specified port.
  * 
  * Usage:
- *   java -jar sharex.jar server1      # Starts server on port 8081 (leader)
- *   java -jar sharex.jar server2      # Starts server on port 8082 (follower)
- *   java -jar sharex.jar server3      # Starts server on port 8083 (follower)
+ *   java -jar sharex.jar server1      # Starts server1 on port 8081
+ *   java -jar sharex.jar server2      # Starts server2 on port 8082
+ *   java -jar sharex.jar server3      # Starts server3 on port 8083
  */
 @SpringBootApplication
 public class Application {
@@ -63,9 +63,9 @@ public class Application {
      * Create and configure the current server instance.
      * 
      * Server Configuration:
-     * - server1: Port 8081 (LEADER)
-     * - server2: Port 8082 (FOLLOWER)
-     * - server3: Port 8083 (FOLLOWER)
+     * - server1: Port 8081
+     * - server2: Port 8082
+     * - server3: Port 8083
      */
     @Bean
     public ServerConfig serverConfig() {
@@ -75,21 +75,21 @@ public class Application {
                     8081,
                     "localhost",
                     getStoragePath("server1"),
-                    true  // This is the leader
+                    false // Role will be determined by ZooKeeper
             );
             case "server2" -> new ServerConfig(
                     "server2",
                     8082,
                     "localhost",
                     getStoragePath("server2"),
-                    false // Follower
+                    false // Role will be determined by ZooKeeper
             );
             case "server3" -> new ServerConfig(
                     "server3",
                     8083,
                     "localhost",
                     getStoragePath("server3"),
-                    false // Follower
+                    false // Role will be determined by ZooKeeper
             );
             default -> throw new IllegalArgumentException(
                     "Unknown server: " + currentServerId + 
@@ -110,7 +110,7 @@ public class Application {
         List<ServerConfig> allServers = new ArrayList<>();
 
         // Define all servers in the cluster
-        allServers.add(new ServerConfig("server1", 8081, "localhost", getStoragePath("server1"), true));
+        allServers.add(new ServerConfig("server1", 8081, "localhost", getStoragePath("server1"), false));
         allServers.add(new ServerConfig("server2", 8082, "localhost", getStoragePath("server2"), false));
         allServers.add(new ServerConfig("server3", 8083, "localhost", getStoragePath("server3"), false));
 
@@ -168,7 +168,8 @@ public class Application {
                 registry.addMapping("/**")
                         .allowedOrigins("*")
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                        .allowedHeaders("*");
+                        .allowedHeaders("*")
+                        .exposedHeaders("Content-Disposition");
             }
         };
     }

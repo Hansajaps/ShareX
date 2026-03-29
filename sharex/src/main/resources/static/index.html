@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -29,7 +30,7 @@
             padding: 30px;
             border-radius: 10px;
             margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
 
         h1 {
@@ -57,7 +58,7 @@
             background: white;
             padding: 20px;
             border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 30px;
             display: flex;
             justify-content: space-between;
@@ -73,14 +74,14 @@
             background: white;
             padding: 20px;
             border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             text-align: center;
             transition: transform 0.3s, box-shadow 0.3s;
         }
 
         .server-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
         }
 
         .server-card h3 {
@@ -128,8 +129,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         .main-content {
@@ -143,7 +151,7 @@
             background: white;
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
 
         .card h2 {
@@ -286,7 +294,9 @@
         }
 
         @keyframes spinner {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .stats {
@@ -351,6 +361,37 @@
             display: block;
         }
 
+        .copyable-link {
+            cursor: pointer;
+            color: #1e88e5;
+            font-weight: bold;
+            text-decoration: underline;
+            padding: 2px 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .copyable-link:hover {
+            background-color: rgba(30, 136, 229, 0.1);
+            color: #1565c0;
+        }
+
+        .copyable-link.copied::after {
+            content: 'Copied!';
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: normal;
+            text-decoration: none;
+        }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -366,6 +407,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -392,7 +434,8 @@
                 </div>
                 <button onclick="uploadFile()">Upload to Leader</button>
                 <p style="margin-top: 15px; color: #666; font-size: 0.9em;">
-                    Files are automatically replicated to all servers for consistency. NOTE: Make sure files uploaded do not contain spaces in between names.
+                    Files are automatically replicated to all servers for consistency. NOTE: Make sure files uploaded do
+                    not contain spaces in between names.
                 </p>
             </div>
 
@@ -407,9 +450,10 @@
                 <div class="form-group">
                     <label for="downloadServer">Download From:</label>
                     <select id="downloadServer">
-                        <option value="8081">Server 1 (Leader)</option>
-                        <option value="8082">Server 2 (Follower)</option>
-                        <option value="8083">Server 3 (Follower)</option>
+                        <!-- Options will be populated dynamically -->
+                        <option value="8081">Server 1</option>
+                        <option value="8082">Server 2</option>
+                        <option value="8083">Server 3</option>
                     </select>
                 </div>
                 <button onclick="downloadFile()">Download</button>
@@ -419,18 +463,21 @@
         <!-- Files & Info Card (Full Width) -->
         <div class="card full-width">
             <h2>System Status & Files</h2>
-            
+
             <div class="tab-buttons">
                 <button class="tab-btn active" onclick="switchTab('files')">Files</button>
                 <button class="tab-btn" onclick="switchTab('info')">System Info</button>
             </div>
 
-            <div id="files" class="tab-content active">
-                <h3>Files:</h3>
-                <div class="file-list" id="fileList">
-                    <div class="loading"></div> Loading files...
+                <div id="files" class="tab-content active">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3>Files:</h3>
+                        <button onclick="purgeCluster()" style="background: #f44336; width: auto; padding: 5px 15px; margin: 0; font-size: 0.9em;">Clear All Files</button>
+                    </div>
+                    <div class="file-list" id="fileList">
+                        <div class="loading"></div> Loading files...
+                    </div>
                 </div>
-            </div>
 
             <div id="info" class="tab-content">
                 <div class="stats">
@@ -448,13 +495,9 @@
                     </div>
                 </div>
                 <div style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px;">
-                    <h4>Cluster Configuration:</h4>
-                    <ul style="margin-left: 20px; margin-top: 10px; color: #666;">
-                        <li><strong>Leader:</strong> Server 1 (Port 8081) - Accepts writes</li>
-                        <li><strong>Followers:</strong> Server 2 (8082), Server 3 (8083) - Receive replications</li>
-                        <li><strong>Consistency:</strong> Strong Consistency</li>
-                        <li><strong>Replication:</strong> Automatic and atomic</li>
-                        <li><strong>Coordination:</strong> Apache ZooKeeper (fallback to hardcoded if unavailable)</li>
+                    <h4>Cluster Configuration (Live):</h4>
+                    <ul id="liveConfig" style="margin-left: 20px; margin-top: 10px; color: #666;">
+                        <li>Loading configuration...</li>
                     </ul>
                 </div>
             </div>
@@ -462,55 +505,126 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8081'; // Default fallback
+        let API_BASE = window.location.origin;
         let currentLeaderUrl = API_BASE;
+        let activeApiUrl = API_BASE;
 
         // Function to discover and update the current leader
         async function updateLeader() {
-            try {
-                // Try each server to find the current leader
-                const servers = ['http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'];
-                
-                for (const serverUrl of servers) {
-                    try {
-                        const response = await fetch(`${serverUrl}/api/leader`, { timeout: 2000 });
-                        if (response.ok) {
-                            const data = await response.json();
-                            currentLeaderUrl = data.leaderUrl;
-                            updateStatusDisplay(data);
-                            return;
-                        }
-                    } catch (e) {
-                        // Server not available, try next
-                        continue;
+            const servers = ['http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'];
+            let found = false;
+
+            for (const serverUrl of servers) {
+                try {
+                    // Manual timeout for better compatibility
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+                    const response = await fetch(`${serverUrl}/api/leader`, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        currentLeaderUrl = data.leaderUrl;
+                        activeApiUrl = serverUrl;
+                        API_BASE = serverUrl;
+                        updateStatusDisplay(data);
+                        found = true;
+                        break;
                     }
+                } catch (e) {
+                    // Continue to next server
                 }
-                
-                // If no server responded, keep current setting
+            }
+
+            if (!found) {
                 console.warn('Could not reach any server to determine leader');
-            } catch (error) {
-                console.error('Error updating leader:', error);
             }
         }
 
         // Update the status display with leader information
-        function updateStatusDisplay(leaderData) {
+        function updateStatusDisplay(data) {
             const statusDiv = document.getElementById('clusterStatus');
-            if (statusDiv && leaderData) {
+            const configList = document.getElementById('liveConfig');
+
+            if (statusDiv && data) {
                 statusDiv.innerHTML = `
                     <div class="status-item">
-                        <strong>Current Leader:</strong> ${leaderData.leaderId} (${leaderData.leaderUrl})
+                        <strong>Current Leader:</strong> ${data.leaderId || data.leader}
                     </div>
                     <div class="status-item">
-                        <strong>This Server:</strong> ${leaderData.currentServer} ${leaderData.isCurrentServerLeader ? '(LEADER)' : '(FOLLOWER)'}
+                        <strong>This Node:</strong> ${data.currentServer} ${data.isCurrentServerLeader || data.isLeader ? '(LEADER)' : '(FOLLOWER)'}
                     </div>
                 `;
             }
+
+            if (configList && data.allServers) {
+                let configHtml = '';
+                const selectElement = document.getElementById('downloadServer');
+                let selectHtml = '';
+
+                data.allServers.forEach(s => {
+                    const isLeader = (s.id === data.leader || s.id === data.leaderId);
+                    configHtml += `
+                        <li>
+                            <strong>${s.id}:</strong> Port ${s.port} - 
+                            ${isLeader ? '<span style="color:#667eea">LEADER</span> (Accepts writes)' : 'Follower'}
+                        </li>
+                    `;
+
+                    // Also update download dropdown if info changed
+                    selectHtml += `<option value="${s.port}">${s.id} ${isLeader ? '(Leader)' : '(Follower)'}</option>`;
+                });
+                configHtml += `<li><strong>Consistency:</strong> Strong Consistency</li>`;
+                configHtml += `<li><strong>Coordination:</strong> Apache ZooKeeper</li>`;
+                configList.innerHTML = configHtml;
+
+                if (selectElement && selectHtml !== '') {
+                    const currentVal = selectElement.value;
+                    selectElement.innerHTML = selectHtml;
+                    if (currentVal) selectElement.value = currentVal;
+                }
+            } else if (data.leader || data.leaderId) {
+                // If we only have leader info, update the leader badges but don't clear the dropdown
+                const selectedLeaderId = data.leader || data.leaderId;
+                const selectElement = document.getElementById('downloadServer');
+                if (selectElement) {
+                    for (let option of selectElement.options) {
+                        const isThisLeader = option.text.startsWith(selectedLeaderId);
+                        option.text = option.text.split('(')[0].trim() + (isThisLeader ? ' (Leader)' : ' (Follower)');
+                    }
+                }
+            }
         }
-        const FOLLOWERS = ['http://localhost:8082', 'http://localhost:8083'];
+        // Helper to fetch from cluster with automatic discovery fallback
+        async function fetchFromCluster(endpoint, options = {}) {
+            const fetchWithTimeout = async (url) => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                const response = await fetch(`${url}${endpoint}`, { ...options, signal: controller.signal });
+                clearTimeout(timeoutId);
+                return response;
+            };
+
+            // Try current active server first
+            try {
+                return await fetchWithTimeout(activeApiUrl || API_BASE);
+            } catch (e) {
+                // Discovery fallback
+                await updateLeader();
+                if (activeApiUrl) {
+                    try {
+                        return await fetchWithTimeout(activeApiUrl);
+                    } catch (e2) {
+                        throw e2;
+                    }
+                }
+                throw e;
+            }
+        }
 
         // Initialize the UI
-        window.onload = function() {
+        window.onload = function () {
             updateLeader(); // Discover current leader
             updateServerStatus();
             refreshFileList();
@@ -523,12 +637,12 @@
 
         function updateServerStatus() {
             const statusBar = document.getElementById('statusBar');
-            
+
             // Fetch status from all servers
             const servers = [
-                { name: 'Server 1', port: 8081, url: 'http://localhost:8081', role: 'LEADER' },
-                { name: 'Server 2', port: 8082, url: 'http://localhost:8082', role: 'FOLLOWER' },
-                { name: 'Server 3', port: 8083, url: 'http://localhost:8083', role: 'FOLLOWER' }
+                { name: 'Server 1', port: 8081, url: 'http://localhost:8081' },
+                { name: 'Server 2', port: 8082, url: 'http://localhost:8082' },
+                { name: 'Server 3', port: 8083, url: 'http://localhost:8083' }
             ];
 
             let html = '';
@@ -570,7 +684,7 @@
         async function uploadFile() {
             const fileInput = document.getElementById('fileInput');
             const messageDiv = document.getElementById('uploadMessage');
-            
+
             if (!fileInput.files.length) {
                 showMessage(messageDiv, 'Please select a file', 'error');
                 return;
@@ -587,7 +701,7 @@
             try {
                 // First, ensure we have the current leader
                 await updateLeader();
-                
+
                 // Attempt upload to current leader
                 let response = await fetch(`${currentLeaderUrl}/upload?file=${encodeURIComponent(file.name)}`, {
                     method: 'POST',
@@ -598,8 +712,8 @@
                     // This server is not the leader, try to find the real leader
                     showMessage(messageDiv, 'Finding current leader...', 'info');
                     await updateLeader();
-                    
-                    if (currentLeaderUrl !== 'http://localhost:8081') { // Avoid infinite loop
+
+                    if (currentLeaderUrl) {
                         response = await fetch(`${currentLeaderUrl}/upload?file=${encodeURIComponent(file.name)}`, {
                             method: 'POST',
                             body: formData
@@ -610,13 +724,20 @@
                 }
 
                 if (!response.ok) throw new Error('Upload failed');
-                
+
                 const data = await response.json();
-                showMessage(messageDiv, `File "${file.name}" uploaded and replicated to all servers!`, 'success');
+                const downloadUrl = `${activeApiUrl}/download?file=${encodeURIComponent(file.name)}`;
+                const fileName = file.name;
+                showMessage(messageDiv, `
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <span>File <span class="copyable-link" onclick="copyText(this, '${fileName}')" title="Click to copy filename">"${fileName}"</span> uploaded successfully!</span>
+                        <button onclick="copyText(this, '${fileName}')" style="width: auto; padding: 5px 12px; background: #6c757d; margin: 0; font-size: 0.8em; color: white;">Copy Name</button>
+                    </div>
+                `, 'success');
                 fileInput.value = '';
                 refreshFileList();
-                updateLeader(); // Refresh leader info after successful upload
-                
+                updateLeader(); 
+
             } catch (err) {
                 showMessage(messageDiv, `Error: ${err.message}`, 'error');
             } finally {
@@ -640,69 +761,76 @@
             link.href = downloadUrl;
             link.download = filename;
             link.click();
-            
+
             showMessage(messageDiv, `Downloading "${filename}" from Server on port ${port}...`, 'info');
         }
 
-        function refreshFileList() {
+        async function refreshFileList() {
             const fileList = document.getElementById('fileList');
-            
-            fetch(`${API_BASE}/files`)
-                .then(r => r.json())
-                .then(data => {
-                    if (!data.files || data.files.length === 0) {
-                        fileList.innerHTML = '<div class="no-files">No files uploaded yet</div>';
-                        document.getElementById('totalFiles').textContent = '0';
-                        return;
-                    }
 
-                    let html = '';
-                    data.files.forEach(fileName => {
-                        html += `
-                            <div class="file-item">
-                                <span>${fileName}</span>
-                                <button onclick="deleteFile('${fileName}')">Delete</button>
+            try {
+                const response = await fetchFromCluster('/files');
+                const data = await response.json();
+
+                if (!data.files || data.files.length === 0) {
+                    fileList.innerHTML = '<div class="no-files">No files uploaded yet</div>';
+                    document.getElementById('totalFiles').textContent = '0';
+                    return;
+                }
+
+                let html = '';
+                data.files.forEach(fileName => {
+                    html += `
+                        <div class="file-item">
+                            <span class="copyable-link" onclick="copyText(this, '${fileName}')" title="Click to copy filename">${fileName}</span>
+                            <div style="display: flex; gap: 5px;">
+                                <button onclick="deleteFile('${fileName}')" style="background: #f44336; width: auto; padding: 5px 15px;">Delete</button>
                             </div>
-                        `;
-                    });
-                    fileList.innerHTML = html;
-                    document.getElementById('totalFiles').textContent = data.files.length;
-                })
-                .catch(() => {
-                    fileList.innerHTML = '<div class="no-files">Unable to fetch files</div>';
+                        </div>
+                    `;
                 });
+                fileList.innerHTML = html;
+                document.getElementById('totalFiles').textContent = data.files.length || '0';
+            } catch (err) {
+                fileList.innerHTML = '<div class="no-files">Unable to fetch files from cluster</div>';
+            }
         }
 
-        function updateSystemInfo() {
+        async function updateSystemInfo() {
             const statusValue = document.getElementById('statusValue');
             const leaderValue = document.getElementById('leaderValue');
-            
-            fetch(`${API_BASE}/api/info`)
-                .then(r => r.json())
-                .then(data => {
-                    // Update ZooKeeper status
-                    if (data.zkConnected) {
-                        statusValue.textContent = 'Connected';
-                        statusValue.style.color = '#4caf50';
-                    } else {
-                        statusValue.textContent = 'Disconnected';
-                        statusValue.style.color = '#f44336';
-                    }
-                    
-                    // Update leader
-                    leaderValue.textContent = data.leader;
-                })
-                .catch((err) => {
-                    statusValue.textContent = 'Error';
+
+            try {
+                const response = await fetchFromCluster('/api/info');
+                const data = await response.json();
+
+                // Update ZooKeeper status
+                if (data.zkConnected) {
+                    statusValue.textContent = 'Connected';
+                    statusValue.style.color = '#4caf50';
+                } else {
+                    statusValue.textContent = 'Disconnected';
                     statusValue.style.color = '#f44336';
-                    leaderValue.textContent = '-';
-                });
+                }
+
+                // Update leader
+                leaderValue.textContent = data.leader;
+
+                // Update cluster config display
+                updateStatusDisplay(data);
+            } catch (err) {
+                statusValue.textContent = 'Error';
+                statusValue.style.color = '#f44336';
+                leaderValue.textContent = '-';
+            }
         }
 
         function deleteFile(filename) {
             if (!confirm(`Delete "${filename}" from all servers?`)) return;
 
-            fetch(`${API_BASE}/delete?file=${encodeURIComponent(filename)}`, { method: 'DELETE' })
+            // Use leader URL for delete operations
+            const targetUrl = currentLeaderUrl || API_BASE;
+            fetch(`${targetUrl}/delete?file=${encodeURIComponent(filename)}`, { method: 'DELETE' })
                 .then(r => r.json())
                 .then(data => {
                     showMessage(document.getElementById('uploadMessage'), `Deleted "${filename}" from all servers`, 'success');
@@ -713,12 +841,102 @@
                 });
         }
 
+        function quickDownload(filename) {
+            // Target the currently active server for download
+            const downloadUrl = `${activeApiUrl}/download?file=${encodeURIComponent(filename)}`;
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = filename;
+            link.click();
+            console.log("Quick download from:", activeApiUrl);
+        }
+
+        async function copyText(element, text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                
+                // Visual feedback
+                const isButton = element.tagName === 'BUTTON';
+                const originalContent = isButton ? element.innerText : element.style.color;
+                
+                if (isButton) {
+                    element.innerText = 'Copied!';
+                    element.style.background = '#4caf50';
+                } else {
+                    element.classList.add('copied');
+                    element.style.color = '#4caf50';
+                }
+                
+                setTimeout(() => {
+                    if (isButton) {
+                        element.innerText = 'Copy Name';
+                        element.style.background = '#6c757d';
+                    } else {
+                        element.classList.remove('copied');
+                        element.style.color = '';
+                    }
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy: ', err);
+            }
+        }
+
+        async function copySpecificLink(element, url) {
+            try {
+                await navigator.clipboard.writeText(url);
+                
+                // Visual feedback
+                element.classList.add('copied');
+                const originalColor = element.style.color;
+                element.style.color = '#4caf50';
+                
+                setTimeout(() => {
+                    element.classList.remove('copied');
+                    element.style.color = originalColor;
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy: ', err);
+            }
+        }
+
         function showMessage(element, message, type) {
-            element.textContent = message;
+            element.innerHTML = message;
             element.className = `message ${type}`;
+            element.style.display = 'block';
+            
+            const timeout = type === 'success' ? 10000 : 3000;
             setTimeout(() => {
-                element.style.display = type === 'info' ? 'block' : element.style.display;
-            }, 3000);
+                if (type !== 'info') {
+                    element.style.display = 'none';
+                }
+            }, timeout);
+        }
+
+        async function purgeCluster() {
+            if (!confirm('CRITICAL: This will delete ALL files from ALL servers in the cluster. Are you sure?')) return;
+
+            const targetUrl = currentLeaderUrl || API_BASE;
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = 'Clearing...';
+
+            try {
+                const response = await fetch(`${targetUrl}/purge`, { method: 'DELETE' });
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage(document.getElementById('uploadMessage'), 'Cluster purged successfully! All files removed.', 'success');
+                } else {
+                    throw new Error(data.error || 'Purge failed');
+                }
+            } catch (err) {
+                showMessage(document.getElementById('uploadMessage'), `Error: ${err.message}`, 'error');
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+                refreshFileList();
+            }
         }
 
         function switchTab(tab) {
@@ -732,4 +950,5 @@
         }
     </script>
 </body>
+
 </html>

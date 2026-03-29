@@ -31,7 +31,6 @@ public class ZooKeeperService {
     // ZooKeeper connection string for 3-node cluster
     // If only one ZooKeeper is running, it will default to localhost:2181
     private static final String ZK_CLUSTER_HOSTS = "localhost:2181,localhost:2182,localhost:2183";
-    private static final String ZK_FALLBACK_HOST = "localhost:2181";
     
     private CuratorFramework client;
     private String serverId;
@@ -81,20 +80,40 @@ public class ZooKeeperService {
      */
     public void start() {
         try {
-            logger.info("Attempting to connect to ZooKeeper cluster: {}", ZK_CLUSTER_HOSTS);
+            logger.info("Connecting to ZooKeeper cluster: {}", ZK_CLUSTER_HOSTS);
             
-            client = CuratorFrameworkFactory.newClient(
-                    ZK_CLUSTER_HOSTS,
-                    new ExponentialBackoffRetry(1000, 3)
-            );
+            client = CuratorFrameworkFactory.builder()
+                    .connectString(ZK_CLUSTER_HOSTS)
+                    .retryPolicy(new ExponentialBackoffRetry(1000, 10))
+                    .connectionTimeoutMs(5000)
+                    .sessionTimeoutMs(10000)
+                    .build();
+
+            // Add listener to initialize once connected
+            client.getConnectionStateListenable().addListener((c, newState) -> {
+                if (newState.isConnected()) {
+                    logger.info("✅ Connected to ZooKeeper cluster");
+                    zkConnected = true;
+                    onConnected();
+                } else {
+                    logger.warn("❌ Disconnected from ZooKeeper");
+                    zkConnected = false;
+                }
+            });
+
             client.start();
-            if (!client.blockUntilConnected(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                throw new Exception("Failed to connect to ZooKeeper cluster within timeout");
-            }
-            
-            logger.info("✅ Connected to ZooKeeper cluster");
-            zkConnected = true;
-            
+            logger.info("ZooKeeper client started, waiting for connection...");
+        } catch (Exception e) {
+            logger.error("❌ Failed to start ZooKeeper client", e);
+            zkConnected = false;
+        }
+    }
+
+    /**
+     * Called when connection is established
+     */
+    private void onConnected() {
+        try {
             // Create root paths if not exist
             createPathIfNotExists(SERVERS_PATH);
             createPathIfNotExists(LEADER_PATH);
@@ -104,66 +123,16 @@ public class ZooKeeperService {
             
             // Register this server
             registerServer();
-            
-            // Pre-assign server1 as initial leader if no leader exists yet
-            if (isLeaderNodeMissing()) {
-                if ("server1".equals(serverId)) {
-                    logger.info("No leader present - server1 will be initial leader");
-                    this.isLeader.set(true);
-                    setLeader(serverId);
-                    if (leaderCallback != null) {
-                        leaderCallback.onLeadershipGained();
-                    }
-                } else {
-                    logger.info("No leader present, waiting for server1 to take leadership");
-                }
-            }
 
-            // Start leader election for failover/backup (continuously requeue)
+            // Start leader election
             startLeaderElection();
-
-            logger.info("✅ Server {} registered in ZooKeeper", serverId);
+            
+            logger.info("✅ Server {} initialized in ZooKeeper", serverId);
         } catch (Exception e) {
-            logger.warn("❌ Could not connect to ZooKeeper cluster, trying fallback: {}", e.getMessage());
-            tryFallbackConnection();
+            logger.error("Error during ZooKeeper initialization", e);
         }
     }
     
-    /**
-     * Fallback connection to single ZooKeeper instance
-     */
-    private void tryFallbackConnection() {
-        try {
-            logger.info("Attempting fallback connection to single ZooKeeper at {}", ZK_FALLBACK_HOST);
-            
-            client = CuratorFrameworkFactory.newClient(
-                    ZK_FALLBACK_HOST,
-                    new ExponentialBackoffRetry(1000, 3)
-            );
-            client.start();
-            if (!client.blockUntilConnected(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                throw new Exception("Failed to connect to ZooKeeper fallback within timeout");
-            }
-            
-            logger.info("✅ Connected to ZooKeeper (fallback single mode)");
-            zkConnected = true;
-            
-            // Create paths
-            createPathIfNotExists(SERVERS_PATH);
-            createPathIfNotExists(LEADER_PATH);
-            createPathIfNotExists(ELECTION_PATH);
-            createPathIfNotExists(FILES_PATH);
-            createPathIfNotExists(SERVER_SYNC_PATH);
-            
-            registerServer();
-            startLeaderElection();
-            logger.info("✅ Server {} registered in ZooKeeper (fallback mode)", serverId);
-        } catch (Exception e) {
-            logger.warn("⚠️  ZooKeeper not available. Running without distributed coordination.");
-            logger.warn("   System will use hardcoded server configuration as fallback.");
-            zkConnected = false;
-        }
-    }
     
     /**
      * Register this server in ZooKeeper
@@ -334,11 +303,13 @@ public class ZooKeeperService {
     public String getLeader() {
         try {
             if (client == null || !client.getZookeeperClient().isConnected()) {
-                return "server1"; // Default fallback
+                return null; // No ZK, no dynamic leader
             }
             
             if (client.checkExists().forPath(LEADER_PATH) != null) {
                 byte[] data = client.getData().forPath(LEADER_PATH);
+                if (data == null || data.length == 0) return null;
+                
                 String leader = new String(data, StandardCharsets.UTF_8);
                 logger.debug("Current leader: {}", leader);
                 return leader;
@@ -346,7 +317,7 @@ public class ZooKeeperService {
         } catch (Exception e) {
             logger.debug("Could not fetch leader from ZooKeeper", e);
         }
-        return "server1"; // Default to server1 if ZK not available
+        return null;
     }
     
     /**
@@ -421,18 +392,66 @@ public class ZooKeeperService {
     }
     
     /**
-     * Helper: returns true when /sharex/leader does not exist or is empty
+     * Register this server as requiring sync (call after connecting/coming online)
+     * Used to notify the leader to synchronize missing files
      */
-    private boolean isLeaderNodeMissing() {
+    public void registerServerForSync() {
+        if (!zkConnected) return;
+        
         try {
-            if (client == null || !client.getZookeeperClient().isConnected()) {
-                return true;
+            String syncPath = SERVER_SYNC_PATH + "/" + serverId;
+            String syncData = String.valueOf(System.currentTimeMillis());
+            
+            if (client.checkExists().forPath(syncPath) != null) {
+                client.setData().forPath(syncPath, syncData.getBytes(StandardCharsets.UTF_8));
+            } else {
+                client.create().forPath(syncPath, syncData.getBytes(StandardCharsets.UTF_8));
             }
-            return client.checkExists().forPath(LEADER_PATH) == null;
+            
+            logger.info("Server {} registered for sync", serverId);
         } catch (Exception e) {
-            logger.debug("Error checking leader node existence: {}", e.getMessage());
-            return true;
+            logger.debug("Could not register server for sync in ZooKeeper", e);
         }
+    }
+    
+    /**
+     * Get servers registered for sync (servers that need file synchronization)
+     */
+    public List<String> getServersRequiringSync() {
+        if (!zkConnected) return new ArrayList<>();
+        
+        try {
+            if (client.checkExists().forPath(SERVER_SYNC_PATH) != null) {
+                return client.getChildren().forPath(SERVER_SYNC_PATH);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not get servers requiring sync from ZooKeeper", e);
+        }
+        return new ArrayList<>();
+    }
+    
+    /**
+     * Remove server from sync registry (call after sync completion)
+     */
+    public void unregisterServerFromSync(String serverId) {
+        if (!zkConnected) return;
+        
+        try {
+            String syncPath = SERVER_SYNC_PATH + "/" + serverId;
+            if (client.checkExists().forPath(syncPath) != null) {
+                client.delete().forPath(syncPath);
+                logger.info("Server {} removed from sync registry", serverId);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not unregister server from sync in ZooKeeper", e);
+        }
+    }
+    
+    /**
+     * Set the sync callback
+     */
+    public void setSyncCallback(ServerSyncCallback callback) {
+        this.syncCallback = callback;
     }
 
     /**

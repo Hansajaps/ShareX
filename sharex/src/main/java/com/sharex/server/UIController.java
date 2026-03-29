@@ -12,14 +12,10 @@ import com.sharex.replication.ServerConfig;
 import com.sharex.zookeeper.ZooKeeperService;
 
 import java.io.File;
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * UI Controller for web interface
@@ -47,10 +43,8 @@ public class UIController {
     public ResponseEntity<?> serveIndex() {
         try {
             // Get the classpath resource for index.html
-            String indexPath = "classpath:static/index.html";
             String indexContent = new String(Files.readAllBytes(
-                    Paths.get(getClass().getClassLoader().getResource("static/index.html").toURI())
-            ));
+                    Paths.get(getClass().getClassLoader().getResource("static/index.html").toURI())));
             return ResponseEntity.ok()
                     .header("Content-Type", "text/html; charset=UTF-8")
                     .body(indexContent);
@@ -71,7 +65,7 @@ public class UIController {
             List<String> fileNames = new ArrayList<>();
             String storagePath = clusterConfig.getCurrentServer().getStoragePath();
             File storageDir = new File(storagePath);
-            
+
             if (storageDir.exists() && storageDir.isDirectory()) {
                 File[] fileArray = storageDir.listFiles();
                 if (fileArray != null) {
@@ -82,7 +76,7 @@ public class UIController {
                     }
                 }
             }
-            
+
             fileNames.sort(String::compareTo);
             return ResponseEntity.ok(Map.of("files", fileNames));
         } catch (Exception e) {
@@ -99,63 +93,35 @@ public class UIController {
     public ResponseEntity<?> listFiles() {
         try {
             Set<String> allFileNames = new LinkedHashSet<>();
-            
-            // Get files from current server
-            String storagePath = clusterConfig.getCurrentServer().getStoragePath();
-            File storageDir = new File(storagePath);
-            
-            if (storageDir.exists() && storageDir.isDirectory()) {
-                File[] fileArray = storageDir.listFiles();
-                if (fileArray != null) {
-                    for (File file : fileArray) {
-                        if (file.isFile()) {
-                            allFileNames.add(file.getName());
+
+            // source 1: ZooKeeper metadata (Global view - SOURCE OF TRUTH)
+            if (zooKeeperService != null && zooKeeperService.isConnected()) {
+                List<String> zkFiles = zooKeeperService.getRegisteredFiles();
+                if (zkFiles != null) {
+                    allFileNames.addAll(zkFiles);
+                    logger.info("Listed {} files from ZooKeeper (Source of Truth)", zkFiles.size());
+                }
+            } else {
+                // FALLBACK ONLY: If ZooKeeper is down, read from disk
+                logger.warn("ZooKeeper disconnected! Falling back to local disk listing.");
+                String storagePath = clusterConfig.getCurrentServer().getStoragePath();
+                File storageDir = new File(storagePath);
+                if (storageDir.exists() && storageDir.isDirectory()) {
+                    File[] fileArray = storageDir.listFiles();
+                    if (fileArray != null) {
+                        for (File file : fileArray) {
+                            if (file.isFile()) allFileNames.add(file.getName());
                         }
                     }
                 }
             }
-            
-            // Get files from all other servers using the internal endpoint
-            String currentServerId = clusterConfig.getCurrentServer().getServerId();
-            for (ServerConfig server : clusterConfig.getAllServers()) {
-                if (!server.getServerId().equals(currentServerId)) {
-                    try {
-                        String filesEndpoint = server.getBaseUrl() + "/internal/files";
-                        HttpURLConnection connection = (HttpURLConnection) new java.net.URL(filesEndpoint).openConnection();
-                        connection.setRequestMethod("GET");
-                        connection.setConnectTimeout(10000);
-                        connection.setReadTimeout(10000);
-                        
-                        if (connection.getResponseCode() == 200) {
-                            String response = new String(connection.getInputStream().readAllBytes());
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object> jsonMap = new ObjectMapper()
-                                    .readValue(response, java.util.Map.class);
-                            
-                            @SuppressWarnings("unchecked")
-                            List<String> otherServerFiles = (List<String>) jsonMap.get("files");
-                            if (otherServerFiles != null) {
-                                allFileNames.addAll(otherServerFiles);
-                            }
-                        }
-                        connection.disconnect();
-                    } catch (java.net.SocketTimeoutException e) {
-                        logger.warn("Timeout getting files from server {} - continuing anyway", server.getServerId());
-                    } catch (Exception e) {
-                        logger.warn("Could not reach server {} - continuing with available files", server.getServerId());
-                    }
-                }
-            }
-            
+
             List<String> sortedFiles = new ArrayList<>(allFileNames);
             sortedFiles.sort(String::compareTo);
-            
-            logger.info("Listed {} unique files", sortedFiles.size());
-            
+
             return ResponseEntity.ok(Map.of(
                     "files", sortedFiles,
-                    "totalFiles", sortedFiles.size()
-            ));
+                    "totalFiles", sortedFiles.size()));
         } catch (Exception e) {
             logger.error("Failed to list files", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -196,12 +162,17 @@ public class UIController {
                 }
             }
 
-            logger.info("File {} deleted from all servers", filename);
+            // Step 3: Remove from ZooKeeper metadata (CRITICAL FIX)
+            if (zooKeeperService != null && zooKeeperService.isConnected()) {
+                logger.info("Unregistering file {} from ZooKeeper", filename);
+                zooKeeperService.unregisterFileMetadata(filename);
+            }
+
+            logger.info("File {} deleted from all servers and ZooKeeper", filename);
             return ResponseEntity.ok(Map.of(
                     "message", "File deleted from all servers",
                     "filename", filename,
-                    "server", clusterConfig.getCurrentServer().getServerId()
-            ));
+                    "server", clusterConfig.getCurrentServer().getServerId()));
 
         } catch (Exception e) {
             logger.error("Delete failed: {}", e.getMessage(), e);
@@ -225,8 +196,13 @@ public class UIController {
                     "leaderId", leader.getServerId(),
                     "leaderUrl", leader.getBaseUrl(),
                     "currentServer", clusterConfig.getCurrentServer().getServerId(),
-                    "isCurrentServerLeader", clusterConfig.isCurrentServerLeader()
-            ));
+                    "isCurrentServerLeader", clusterConfig.isCurrentServerLeader(),
+                    "allServers", clusterConfig.getAllServers().stream()
+                            .map(s -> Map.of(
+                                    "id", s.getServerId(),
+                                    "port", s.getPort(),
+                                    "url", s.getBaseUrl()))
+                            .collect(Collectors.toList())));
         } catch (Exception e) {
             logger.error("Failed to get leader info", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -250,10 +226,8 @@ public class UIController {
                             .map(s -> Map.of(
                                     "id", s.getServerId(),
                                     "port", s.getPort(),
-                                    "url", s.getBaseUrl()
-                            ))
-                            .collect(Collectors.toList())
-            ));
+                                    "url", s.getBaseUrl()))
+                            .collect(Collectors.toList())));
         } catch (Exception e) {
             logger.error("Failed to get system info", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -262,12 +236,42 @@ public class UIController {
     }
 
     /**
-     * Helper: Format file size for display
+     * Delete ALL files from ALL servers and wipe metadata (FOR TESTING/CLEANUP)
+     * DELETE /purge
      */
-    private String formatFileSize(long size) {
-        if (size <= 0) return "0 B";
-        final String[] units = new String[] { "B", "KB", "MB", "GB", "TB" };
-        int digitGroups = (int) (Math.log10(size) / Math.log10(1024));
-        return String.format("%.1f %s", size / Math.pow(1024, digitGroups), units[digitGroups]);
+    @DeleteMapping("/purge")
+    public ResponseEntity<?> purgeAll() {
+        logger.info("CRITICAL: Purge request for ALL cluster data");
+
+        if (!clusterConfig.isCurrentServerLeader()) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Only the leader can purge the cluster"));
+        }
+
+        try {
+            // Get all files from ZK first (so we know what to wipe on followers)
+            List<String> allFiles = zooKeeperService.getRegisteredFiles();
+            
+            // Delete local files on leader
+            for (String filename : allFiles) {
+                try { fileService.deleteFile(filename); } catch (Exception ignored) {}
+                zooKeeperService.unregisterFileMetadata(filename);
+            }
+
+            // Tell all followers to purge
+            for (var follower : clusterConfig.getFollowers()) {
+                try {
+                    // We can reuse delete replica or add a new purge replica endpoint
+                    for (String filename : allFiles) {
+                        ReplicaClient.deleteFileReplica(follower.getBaseUrl(), filename);
+                    }
+                } catch (Exception e) {
+                    logger.error("Failed to purge follow {}: {}", follower.getServerId(), e.getMessage());
+                }
+            }
+
+            return ResponseEntity.ok(Map.of("message", "System purge complete. All data wiped."));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", "Purge failed: " + e.getMessage()));
+        }
     }
 }
