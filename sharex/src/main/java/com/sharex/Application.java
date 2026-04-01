@@ -10,7 +10,8 @@ import com.sharex.server.FileServiceImpl;
 import com.sharex.replication.ClusterConfig;
 import com.sharex.replication.ServerConfig;
 import com.sharex.zookeeper.ZooKeeperService;
-import com.sharex.sync.ServerSyncService;
+import com.sharex.time.TimeSyncService;
+import org.springframework.context.annotation.Lazy;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,14 +23,14 @@ import java.util.List;
  * It starts a Spring Boot HTTP server on the specified port.
  * 
  * Usage:
- *   java -jar sharex.jar server1      # Starts server1 on port 8081
- *   java -jar sharex.jar server2      # Starts server2 on port 8082
- *   java -jar sharex.jar server3      # Starts server3 on port 8083
+ * java -jar sharex.jar server1 # Starts server1 on port 8081
+ * java -jar sharex.jar server2 # Starts server2 on port 8082
+ * java -jar sharex.jar server3 # Starts server3 on port 8083
  */
 @SpringBootApplication
 public class Application {
 
-    private static String currentServerId = "server1";  // Default
+    private static String currentServerId = "server1"; // Default
 
     public static void main(String[] args) {
         // Parse command-line argument to determine which server to start
@@ -76,25 +77,24 @@ public class Application {
                     "localhost",
                     getStoragePath("server1"),
                     false // Role will be determined by ZooKeeper
-            );
+                );
             case "server2" -> new ServerConfig(
                     "server2",
                     8082,
                     "localhost",
                     getStoragePath("server2"),
                     false // Role will be determined by ZooKeeper
-            );
+                );
             case "server3" -> new ServerConfig(
                     "server3",
                     8083,
                     "localhost",
                     getStoragePath("server3"),
                     false // Role will be determined by ZooKeeper
-            );
+                );
             default -> throw new IllegalArgumentException(
-                    "Unknown server: " + currentServerId + 
-                    ". Valid values are: server1, server2, server3"
-            );
+                    "Unknown server: " + currentServerId +
+                            ". Valid values are: server1, server2, server3");
         };
 
         System.out.println("Server Configuration: " + config);
@@ -139,19 +139,21 @@ public class Application {
      * Create ZooKeeper service for distributed coordination
      */
     @Bean
-    public ZooKeeperService zooKeeperService(ServerConfig serverConfig) {
+    public ZooKeeperService zooKeeperService(ServerConfig serverConfig, @Lazy TimeSyncService timeSyncService) {
         ZooKeeperService.LeaderElectionCallback callback = new ZooKeeperService.LeaderElectionCallback() {
             @Override
             public void onLeadershipGained() {
                 System.out.println("🎯 Server " + serverConfig.getServerId() + " has gained leadership!");
+                // Begin Berkeley Time Synchronization process
+                timeSyncService.startPeriodicSync();
             }
-            
+
             @Override
             public void onLeadershipLost() {
                 System.out.println("💔 Server " + serverConfig.getServerId() + " has lost leadership!");
             }
         };
-        
+
         ZooKeeperService service = new ZooKeeperService(serverConfig.getServerId(), serverConfig.getPort(), callback);
         service.start();
         return service;
@@ -182,7 +184,7 @@ public class Application {
         // Get the storage directory relative to the current working directory
         String projectRoot = System.getProperty("user.dir");
         String storagePath = projectRoot + File.separator + "storage" + File.separator + serverId;
-        
+
         // Create directory if it doesn't exist
         File storageDir = new File(storagePath);
         if (!storageDir.exists()) {

@@ -392,6 +392,43 @@
             text-decoration: none;
         }
 
+        .time-sync-container {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 6px solid #667eea;
+            transition: all 0.3s ease;
+        }
+
+        .time-sync-container:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .time-display {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #333;
+            letter-spacing: 1px;
+        }
+
+        .offset-badge {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -403,6 +440,17 @@
 
             h1 {
                 font-size: 2em;
+            }
+            
+            .time-sync-container {
+                flex-direction: column;
+                text-align: center;
+                gap: 15px;
+            }
+            
+            .time-sync-container div {
+                text-align: center !important;
+                justify-content: center !important;
             }
         }
     </style>
@@ -421,6 +469,46 @@
 
         <div class="cluster-status" id="clusterStatus">
             <!-- Current leader and cluster info will be displayed here -->
+        </div>
+
+        <div class="time-sync-container" id="timeSyncContainer" style="display: block;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e0e0e0; padding-bottom: 15px; margin-bottom: 15px;">
+                <div style="display: flex; align-items: center;">
+                    <div class="status-indicator status-online" style="margin-right: 15px;"></div>
+                    <div>
+                        <div style="font-size: 0.8em; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Cluster Time (Berkeley Synced)</div>
+                        <div class="time-display" id="logicalTimeClock">00:00:00.000</div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <div id="syncStatusText" style="font-size: 0.85em; color: #4caf50; font-weight: bold; margin-bottom: 5px;">
+                        <span style="animation: pulse 2s infinite">●</span> SYNCHRONIZED
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: flex-end;">
+                        <span style="font-size: 0.8em; color: #888;">Local Avg Offset:</span>
+                        <span class="offset-badge" id="offsetValue">0ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Individual Server Times Display -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;" id="serverTimesDashboard">
+                <div style="background: rgba(0,0,0,0.02); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #f0f0f0;">
+                    <div style="font-size: 0.75em; color: #777; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 5px;">SERVER 1 (8081)</div>
+                    <div id="s1Time" style="font-family: 'Courier New', Courier, monospace; font-size: 1.1em; color: #333; font-weight: 600;">--:--:--.---</div>
+                    <div id="s1Offset" style="font-size: 0.8em; margin-top: 5px; color: #888;">Offset: <span style="font-weight:bold;">-</span></div>
+                </div>
+                <div style="background: rgba(0,0,0,0.02); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #f0f0f0;">
+                    <div style="font-size: 0.75em; color: #777; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 5px;">SERVER 2 (8082)</div>
+                    <div id="s2Time" style="font-family: 'Courier New', Courier, monospace; font-size: 1.1em; color: #333; font-weight: 600;">--:--:--.---</div>
+                    <div id="s2Offset" style="font-size: 0.8em; margin-top: 5px; color: #888;">Offset: <span style="font-weight:bold;">-</span></div>
+                </div>
+                <div style="background: rgba(0,0,0,0.02); padding: 12px; border-radius: 8px; text-align: center; border: 1px solid #f0f0f0;">
+                    <div style="font-size: 0.75em; color: #777; font-weight: bold; letter-spacing: 0.5px; margin-bottom: 5px;">SERVER 3 (8083)</div>
+                    <div id="s3Time" style="font-family: 'Courier New', Courier, monospace; font-size: 1.1em; color: #333; font-weight: 600;">--:--:--.---</div>
+                    <div id="s3Offset" style="font-size: 0.8em; margin-top: 5px; color: #888;">Offset: <span style="font-weight:bold;">-</span></div>
+                </div>
+            </div>
         </div>
 
         <div class="main-content">
@@ -509,6 +597,47 @@
         let currentLeaderUrl = API_BASE;
         let activeApiUrl = API_BASE;
 
+        // --- Time Sync Network Optimization ---
+        // Instead of making 80 HTTP requests per second (which exhausts Tomcat's connection pool),
+        // we fetch the true time every 3000ms from the cluster, and interpolate the visual clock ticking locally!
+        let localLogicalTime = 0, s1PhysTime = 0, s2PhysTime = 0, s3PhysTime = 0;
+        let lastTimestamp = 0;
+
+        function interpolateClocks(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const delta = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+
+            const formatT = (ts) => {
+                const d = new Date(Math.floor(ts));
+                return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}.${d.getMilliseconds().toString().padStart(3, '0')}`;
+            };
+
+            if (localLogicalTime > 0) {
+                localLogicalTime += delta;
+                const el = document.getElementById('logicalTimeClock');
+                if (el) el.innerText = formatT(localLogicalTime);
+            }
+            if (s1PhysTime > 0) {
+                s1PhysTime += delta;
+                const el = document.getElementById('s1Time');
+                if (el) el.innerText = formatT(s1PhysTime);
+            }
+            if (s2PhysTime > 0) {
+                s2PhysTime += delta;
+                const el = document.getElementById('s2Time');
+                if (el) el.innerText = formatT(s2PhysTime);
+            }
+            if (s3PhysTime > 0) {
+                s3PhysTime += delta;
+                const el = document.getElementById('s3Time');
+                if (el) el.innerText = formatT(s3PhysTime);
+            }
+
+            requestAnimationFrame(interpolateClocks);
+        }
+        requestAnimationFrame(interpolateClocks);
+
         // Function to discover and update the current leader
         async function updateLeader() {
             const servers = ['http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'];
@@ -530,6 +659,17 @@
                         API_BASE = serverUrl;
                         updateStatusDisplay(data);
                         found = true;
+                        
+                        // Check if the current browser window is pointing to the leader server
+                        const timeSyncContainer = document.getElementById('timeSyncContainer');
+                        if (timeSyncContainer) {
+                             if (data.leaderUrl && window.location.origin === data.leaderUrl) {
+                                 timeSyncContainer.style.borderLeftColor = '#ff9800'; // Gold/Orange for leader
+                             } else {
+                                 timeSyncContainer.style.borderLeftColor = '#667eea'; // Standard Blue for follower
+                             }
+                        }
+                        
                         break;
                     }
                 } catch (e) {
@@ -542,18 +682,113 @@
             }
         }
 
+        // Time Synchronization UI Updater
+        async function updateTimeSync() {
+            try {
+                // Fetch main clock with strict timeout to prevent hung requests
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                
+                const [pRes, lRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/time/physical`, { signal: controller.signal }),
+                    fetch(`${API_BASE}/api/time/logical`, { signal: controller.signal })
+                ]);
+                clearTimeout(timeoutId);
+
+                if (pRes.ok && lRes.ok) {
+                    const physical = await pRes.json();
+                    const logical = await lRes.json();
+                    const offset = logical - physical;
+
+                    // Sync the interpolator logical clock state
+                    localLogicalTime = logical;
+
+                    // Update Average Offset (from this node's view)
+                    const offsetEl = document.getElementById('offsetValue');
+                    if (offsetEl) {
+                        offsetEl.innerText = (offset >= 0 ? '+' : '') + offset + 'ms';
+                        
+                        if (Math.abs(offset) > 100) offsetEl.style.backgroundColor = '#ffebee', offsetEl.style.color = '#f44336';
+                        else if (Math.abs(offset) > 10) offsetEl.style.backgroundColor = '#fff3e0', offsetEl.style.color = '#ff9800';
+                        else offsetEl.style.backgroundColor = '#e3f2fd', offsetEl.style.color = '#1976d2';
+                    }
+                }
+
+                // Sub-routine: Fetch times from all servers concurrently
+                const clusterNodes = [
+                    { id: 's1', url: 'http://localhost:8081' },
+                    { id: 's2', url: 'http://localhost:8082' },
+                    { id: 's3', url: 'http://localhost:8083' }
+                ];
+
+                clusterNodes.forEach(node => {
+                    const c = new AbortController();
+                    const t = setTimeout(() => c.abort(), 2000);
+                    Promise.all([
+                        fetch(`${node.url}/api/time/physical`, { signal: c.signal }),
+                        fetch(`${node.url}/api/time/logical`, { signal: c.signal })
+                    ]).then(async ([nodePhysicalReq, nodeLogicalReq]) => {
+                        clearTimeout(t);
+                        if(nodePhysicalReq.ok && nodeLogicalReq.ok) {
+                            const pTime = await nodePhysicalReq.json();
+                            const lTime = await nodeLogicalReq.json();
+                            const nodeOffset = lTime - pTime;
+                            
+                            // Sync interpolator
+                            if (node.id === 's1') s1PhysTime = pTime;
+                            if (node.id === 's2') s2PhysTime = pTime;
+                            if (node.id === 's3') s3PhysTime = pTime;
+                            
+                            const offEl = document.getElementById(`${node.id}Offset`);
+                            if (offEl) {
+                                const offsetStr = (nodeOffset >= 0 ? '+' : '') + nodeOffset + 'ms';
+                                offEl.innerHTML = `Adj: <span style="font-weight:bold; color:${Math.abs(nodeOffset) > 50 ? '#f44336' : '#2e7d32'}">${offsetStr}</span>`;
+                            }
+                        }
+                    }).catch(e => {
+                        // Mark OFFLINE and stop its clock from spinning
+                        if (node.id === 's1') s1PhysTime = 0;
+                        if (node.id === 's2') s2PhysTime = 0;
+                        if (node.id === 's3') s3PhysTime = 0;
+                        
+                        const timeEl = document.getElementById(`${node.id}Time`);
+                        const offEl = document.getElementById(`${node.id}Offset`);
+                        if(timeEl) timeEl.innerHTML = `<span style="color:#f44336; font-size:0.9em">OFFLINE</span>`;
+                        if(offEl) offEl.innerHTML = `Adj: <span style="font-weight:bold; color:#f44336">-</span>`;
+                    });
+                });
+            } catch (e) {
+                // Update skip
+            }
+        }
+
         // Update the status display with leader information
         function updateStatusDisplay(data) {
             const statusDiv = document.getElementById('clusterStatus');
             const configList = document.getElementById('liveConfig');
 
             if (statusDiv && data) {
+                let thisNodeId = data.currentServer;
+                let isThisLeader = data.isCurrentServerLeader || data.isLeader;
+                
+                // Accurately determine "This Node" by matching browser origin
+                if (data.allServers) {
+                    const localMatch = data.allServers.find(s => s.url === window.location.origin);
+                    if (localMatch) {
+                        thisNodeId = localMatch.id;
+                        // A node is the leader if it matches the current reported leader ID
+                        isThisLeader = (localMatch.id === data.leaderId || localMatch.id === data.leader);
+                    }
+                } else if (data.leaderUrl) {
+                    isThisLeader = (window.location.origin === data.leaderUrl);
+                }
+
                 statusDiv.innerHTML = `
                     <div class="status-item">
                         <strong>Current Leader:</strong> ${data.leaderId || data.leader}
                     </div>
                     <div class="status-item">
-                        <strong>This Node:</strong> ${data.currentServer} ${data.isCurrentServerLeader || data.isLeader ? '(LEADER)' : '(FOLLOWER)'}
+                        <strong>This Node:</strong> ${thisNodeId} ${isThisLeader ? '(LEADER)' : '(FOLLOWER)'}
                     </div>
                 `;
             }
@@ -629,56 +864,93 @@
             updateServerStatus();
             refreshFileList();
             updateSystemInfo();
-            setInterval(updateLeader, 3000); // Check leader every 3 seconds
-            setInterval(updateServerStatus, 5000); // Refresh every 5 seconds
-            setInterval(refreshFileList, 10000); // Refresh files every 10 seconds
-            setInterval(updateSystemInfo, 5000); // Refresh system info every 5 seconds
+            
+            // Start Background refreshers
+            setInterval(updateLeader, 3000); 
+            setInterval(updateServerStatus, 5000); 
+            setInterval(refreshFileList, 10000); 
+            setInterval(updateSystemInfo, 5000);
+            
+            // Start Time Synchronization UI Update
+            setInterval(updateTimeSync, 3000);
         };
 
-        function updateServerStatus() {
+        async function updateServerStatus() {
             const statusBar = document.getElementById('statusBar');
 
-            // Fetch status from all servers
+            // 1. Single Source of Truth: Get the actual consensus leader
+            // We use activeApiUrl because it has successfully connected and checked ZooKeeper
+            let trueLeaderId = null;
+            try {
+                // Short timeout to prevent UI hanging
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                const lRes = await fetch(`${activeApiUrl}/api/leader`, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                
+                if (lRes.ok) {
+                    const lData = await lRes.json();
+                    trueLeaderId = lData.leaderId || lData.leader;
+                }
+            } catch (e) {
+                // If we can't reach the active API, we must rely on individual node opinions
+            }
+
             const servers = [
-                { name: 'Server 1', port: 8081, url: 'http://localhost:8081' },
-                { name: 'Server 2', port: 8082, url: 'http://localhost:8082' },
-                { name: 'Server 3', port: 8083, url: 'http://localhost:8083' }
+                { id: 'server1', name: 'Server 1', port: 8081, url: 'http://localhost:8081' },
+                { id: 'server2', name: 'Server 2', port: 8082, url: 'http://localhost:8082' },
+                { id: 'server3', name: 'Server 3', port: 8083, url: 'http://localhost:8083' }
             ];
 
+            // 2. Query all servers concurrently (Promise.all prevents async race conditions mutating HTML)
+            const results = await Promise.all(servers.map(async (server) => {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    const r = await fetch(`${server.url}/status`, { signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    
+                    if (r.ok) {
+                        const data = await r.json();
+                        // CRITICAL: Prevent UI Split-Brain! 
+                        // A node disconnected from ZK might locally fall back to "I am the leader" from properties.
+                        // We strictly override individual opinions with the consensus 'trueLeaderId' if known.
+                        const isLeader = trueLeaderId ? (data.serverId === trueLeaderId || server.id === trueLeaderId) : data.isLeader;
+                        return { server, status: 'Online', isLeader };
+                    }
+                } catch (e) { }
+                return { server, status: 'Offline', isLeader: false };
+            }));
+
+            // 3. Render maintaining strict order
             let html = '';
-            servers.forEach(server => {
-                fetch(`${server.url}/status`)
-                    .then(r => r.json())
-                    .then(data => {
-                        const isLeader = data.isLeader;
-                        const status = 'Online';
-                        html += `
-                            <div class="server-card">
-                                <h3>${server.name}</h3>
-                                <div class="server-id">Port: ${server.port}</div>
-                                <div>
-                                    <span class="status-indicator status-online"></span>
-                                    <span class="status-text">${status}</span>
-                                </div>
-                                ${isLeader ? '<div class="leader-badge">LEADER</div>' : '<div style="color: #999; font-size: 0.9em; margin-top: 10px;">Follower</div>'}
+            results.forEach(res => {
+                if (res.status === 'Online') {
+                    html += `
+                        <div class="server-card">
+                            <h3>${res.server.name}</h3>
+                            <div class="server-id">Port: ${res.server.port}</div>
+                            <div>
+                                <span class="status-indicator status-online"></span>
+                                <span class="status-text">Online</span>
                             </div>
-                        `;
-                        statusBar.innerHTML = html;
-                    })
-                    .catch(() => {
-                        html += `
-                            <div class="server-card">
-                                <h3>${server.name}</h3>
-                                <div class="server-id">Port: ${server.port}</div>
-                                <div>
-                                    <span class="status-indicator status-offline"></span>
-                                    <span class="status-text">Offline</span>
-                                </div>
+                            ${res.isLeader ? '<div class="leader-badge">LEADER</div>' : '<div style="color: #999; font-size: 0.9em; margin-top: 10px;">Follower</div>'}
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="server-card" style="opacity: 0.7;">
+                            <h3>${res.server.name}</h3>
+                            <div class="server-id">Port: ${res.server.port}</div>
+                            <div>
+                                <span class="status-indicator status-offline"></span>
+                                <span class="status-text" style="color:#f44336;">Offline</span>
                             </div>
-                        `;
-                        statusBar.innerHTML = html;
-                    });
+                        </div>
+                    `;
+                }
             });
+            statusBar.innerHTML = html;
         }
 
         async function uploadFile() {
