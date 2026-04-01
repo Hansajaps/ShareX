@@ -5,6 +5,7 @@ import com.sharex.replication.ServerConfig;
 import com.sharex.replication.ReplicaClient;
 import com.sharex.server.FileService;
 import com.sharex.zookeeper.ZooKeeperService;
+import com.sharex.time.TimeSyncService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +13,6 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 
-import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
@@ -43,6 +43,9 @@ public class ServerSyncService {
 
     @Autowired
     private FileService fileService;
+
+    @Autowired
+    private TimeSyncService timeSyncService;
 
     private ScheduledExecutorService syncExecutor;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -77,7 +80,8 @@ public class ServerSyncService {
      */
     private void registerServerForSync() {
         try {
-            zooKeeperService.registerServerForSync();
+            // Register using the synchronized logical time
+            zooKeeperService.registerServerForSync(timeSyncService.getCurrentTime());
             logger.info("✅ Server {} registered for sync", clusterConfig.getCurrentServer().getServerId());
         } catch (Exception e) {
             logger.warn("Could not register for sync: {}", e.getMessage());
@@ -269,7 +273,6 @@ public class ServerSyncService {
             byte[] responseBytes = connection.getInputStream().readAllBytes();
             Map<String, Object> response = objectMapper.readValue(responseBytes, Map.class);
 
-            @SuppressWarnings("unchecked")
             List<String> missingFiles = (List<String>) response.get("missingFiles");
             return missingFiles != null ? missingFiles : List.of();
 

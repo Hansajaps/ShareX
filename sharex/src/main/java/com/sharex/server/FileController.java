@@ -11,6 +11,7 @@ import com.sharex.replication.ClusterConfig;
 import com.sharex.replication.ReplicaClient;
 import com.sharex.replication.ServerConfig;
 import com.sharex.zookeeper.ZooKeeperService;
+import com.sharex.time.TimeSyncService;
 import java.io.FileNotFoundException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,8 +24,10 @@ import java.util.concurrent.TimeUnit;
  * 
  * Provides endpoints for:
  * - /upload - Client uploads file to leader (client-facing, write operation)
- * - /download - Client downloads file from any server (client-facing, read operation)
- * - /replicate - Replicates file from leader to followers (internal, server-to-server)
+ * - /download - Client downloads file from any server (client-facing, read
+ * operation)
+ * - /replicate - Replicates file from leader to followers (internal,
+ * server-to-server)
  * 
  * Consistency Model:
  * - Only the leader accepts direct client write requests (/upload)
@@ -41,13 +44,16 @@ public class FileController {
 
     @Autowired
     private ClusterConfig clusterConfig;
-    
+
     @Autowired
     private ZooKeeperService zooKeeperService;
 
+    @Autowired
+    private TimeSyncService timeSyncService;
+
     // Mutex for each file to prevent concurrent writes
     private static final Map<String, Object> fileLocks = new ConcurrentHashMap<>();
-    
+
     // Thread pool for asynchronous replication with retry logic
     private final ScheduledExecutorService replicationExecutor = Executors.newScheduledThreadPool(5);
     private static final int MAX_REPLICATION_RETRIES = 3;
@@ -94,31 +100,30 @@ public class FileController {
                 byte[] fileBytes = fileData.getBytes();
                 List<ServerConfig> allServers = clusterConfig.getAllServers();
                 String currentServerId = clusterConfig.getCurrentServer().getServerId();
-                
+
                 for (ServerConfig server : allServers) {
                     // Skip replicating to self
                     if (server.getServerId().equals(currentServerId)) {
                         logger.debug("Skipping self ({}) in replication", currentServerId);
                         continue;
                     }
-                    
+
                     // Submit async replication task with retry logic
                     replicationExecutor.submit(() -> {
                         replicateWithRetry(filename, server, fileBytes, 0);
                     });
                 }
-                
+
                 // Step 3: Register file metadata in ZooKeeper
                 logger.info("Registering file {} metadata in ZooKeeper", filename);
-                zooKeeperService.registerFileMetadata(filename, fileData.getSize(), System.currentTimeMillis());
+                zooKeeperService.registerFileMetadata(filename, fileData.getSize(), timeSyncService.getCurrentTime());
             }
 
             logger.info("File {} uploaded and replicated successfully", filename);
             return ResponseEntity.ok(Map.of(
                     "message", "File uploaded successfully",
                     "filename", filename,
-                    "server", clusterConfig.getCurrentServer().getServerId()
-            ));
+                    "server", clusterConfig.getCurrentServer().getServerId()));
 
         } catch (Exception e) {
             logger.error("Upload failed: {}", e.getMessage(), e);
@@ -192,8 +197,7 @@ public class FileController {
             return ResponseEntity.ok(Map.of(
                     "message", "File replicated successfully",
                     "filename", filename,
-                    "server", clusterConfig.getCurrentServer().getServerId()
-            ));
+                    "server", clusterConfig.getCurrentServer().getServerId()));
 
         } catch (Exception e) {
             logger.error("Replication failed: {}", e.getMessage(), e);
@@ -224,8 +228,7 @@ public class FileController {
             return ResponseEntity.ok(Map.of(
                     "message", "File deleted successfully",
                     "filename", filename,
-                    "server", clusterConfig.getCurrentServer().getServerId()
-            ));
+                    "server", clusterConfig.getCurrentServer().getServerId()));
 
         } catch (Exception e) {
             logger.error("Delete replication failed: {}", e.getMessage(), e);
@@ -249,28 +252,28 @@ public class FileController {
                 "port", clusterConfig.getCurrentServer().getPort(),
                 "isLeader", clusterConfig.isCurrentServerLeader(),
                 "storagePath", clusterConfig.getCurrentServer().getStoragePath(),
-                "leaderId", clusterConfig.getLeader().getServerId()
-        ));
+                "leaderId", clusterConfig.getLeader().getServerId()));
     }
 
     /**
      * INTERNAL: List all files in cluster
      * GET /list-files
      * 
-     * Returns list of all files that exist in the cluster (from ZooKeeper metadata).
-     * Used by the leader to identify which files need to be replicated to other servers.
+     * Returns list of all files that exist in the cluster (from ZooKeeper
+     * metadata).
+     * Used by the leader to identify which files need to be replicated to other
+     * servers.
      */
     @GetMapping("/list-files")
     public ResponseEntity<?> listAllFiles() {
         logger.info("List files request received from: {}", clusterConfig.getCurrentServer().getServerId());
-        
+
         try {
             List<String> allFiles = zooKeeperService.getRegisteredFiles();
             logger.info("Returning {} files from cluster metadata", allFiles.size());
             return ResponseEntity.ok(Map.of(
                     "files", allFiles,
-                    "server", clusterConfig.getCurrentServer().getServerId()
-            ));
+                    "server", clusterConfig.getCurrentServer().getServerId()));
         } catch (Exception e) {
             logger.error("Failed to list files: {}", e.getMessage(), e);
             return ResponseEntity
@@ -283,35 +286,37 @@ public class FileController {
      * INTERNAL: Get list of missing files for this server
      * GET /get-missing-files
      * 
-     * Returns list of files that exist in the cluster but are missing on this server.
-     * The leader uses this to determine which files need to be replicated to this server.
+     * Returns list of files that exist in the cluster but are missing on this
+     * server.
+     * The leader uses this to determine which files need to be replicated to this
+     * server.
      * Useful for server consistency when a server comes back online.
      */
     @GetMapping("/get-missing-files")
     public ResponseEntity<?> getMissingFiles() {
-        logger.info("Get missing files request received for server: {}", clusterConfig.getCurrentServer().getServerId());
-        
+        logger.info("Get missing files request received for server: {}",
+                clusterConfig.getCurrentServer().getServerId());
+
         try {
             List<String> allClusterFiles = zooKeeperService.getRegisteredFiles();
             List<String> missingFiles = new ArrayList<>();
-            
+
             // Check which files are missing locally
             for (String filename : allClusterFiles) {
                 if (!fileService.fileExists(filename)) {
                     missingFiles.add(filename);
                 }
             }
-            
-            logger.info("Server {} is missing {} out of {} files", 
-                    clusterConfig.getCurrentServer().getServerId(), 
-                    missingFiles.size(), 
+
+            logger.info("Server {} is missing {} out of {} files",
+                    clusterConfig.getCurrentServer().getServerId(),
+                    missingFiles.size(),
                     allClusterFiles.size());
-            
+
             return ResponseEntity.ok(Map.of(
                     "missingFiles", missingFiles,
                     "totalClusterFiles", allClusterFiles.size(),
-                    "server", clusterConfig.getCurrentServer().getServerId()
-            ));
+                    "server", clusterConfig.getCurrentServer().getServerId()));
         } catch (Exception e) {
             logger.error("Failed to get missing files: {}", e.getMessage(), e);
             return ResponseEntity
@@ -330,17 +335,18 @@ public class FileController {
      */
     @PostMapping("/sync-complete")
     public ResponseEntity<?> syncComplete() {
-        logger.info("Sync complete notification received for server: {}", clusterConfig.getCurrentServer().getServerId());
-        
+        logger.info("Sync complete notification received for server: {}",
+                clusterConfig.getCurrentServer().getServerId());
+
         try {
             // Remove this server from the sync registry
             zooKeeperService.unregisterServerFromSync(clusterConfig.getCurrentServer().getServerId());
-            
-            logger.info("✅ Server {} sync complete and registered as ready", clusterConfig.getCurrentServer().getServerId());
+
+            logger.info("✅ Server {} sync complete and registered as ready",
+                    clusterConfig.getCurrentServer().getServerId());
             return ResponseEntity.ok(Map.of(
                     "message", "Sync complete",
-                    "server", clusterConfig.getCurrentServer().getServerId()
-            ));
+                    "server", clusterConfig.getCurrentServer().getServerId()));
         } catch (Exception e) {
             logger.error("Failed to mark sync complete: {}", e.getMessage(), e);
             return ResponseEntity
@@ -351,17 +357,19 @@ public class FileController {
 
     /**
      * INTERNAL: Async replication with retry logic
-     * Attempts to replicate a file to a target server with exponential backoff retry.
-     * This ensures that transient network issues don't prevent replication immediately.
+     * Attempts to replicate a file to a target server with exponential backoff
+     * retry.
+     * This ensures that transient network issues don't prevent replication
+     * immediately.
      * 
-     * @param filename File to replicate
-     * @param server Target server
+     * @param filename  File to replicate
+     * @param server    Target server
      * @param fileBytes File content
-     * @param attempt Current attempt number
+     * @param attempt   Current attempt number
      */
     private void replicateWithRetry(String filename, ServerConfig server, byte[] fileBytes, int attempt) {
         try {
-            logger.info("Replicating file {} to server: {} (attempt {}/{})", 
+            logger.info("Replicating file {} to server: {} (attempt {}/{})",
                     filename, server.getServerId(), attempt + 1, MAX_REPLICATION_RETRIES);
             ReplicaClient.replicateFile(server.getBaseUrl(), filename, fileBytes);
             logger.info("✅ Successfully replicated {} to {}", filename, server.getServerId());
@@ -369,15 +377,15 @@ public class FileController {
             if (attempt < MAX_REPLICATION_RETRIES - 1) {
                 // Retry with exponential backoff: 1s, 2s, 4s
                 long delayMs = (long) (1000 * Math.pow(2, attempt));
-                logger.warn("Replication of {} to {} failed (attempt {}/{}), retrying in {}ms: {}", 
+                logger.warn("Replication of {} to {} failed (attempt {}/{}), retrying in {}ms: {}",
                         filename, server.getServerId(), attempt + 1, MAX_REPLICATION_RETRIES, delayMs, e.getMessage());
-                
+
                 // Schedule retry
                 replicationExecutor.schedule(() -> {
                     replicateWithRetry(filename, server, fileBytes, attempt + 1);
                 }, delayMs, TimeUnit.MILLISECONDS);
             } else {
-                logger.warn("Failed to replicate {} to {} after {} attempts (will sync when online): {}", 
+                logger.warn("Failed to replicate {} to {} after {} attempts (will sync when online): {}",
                         filename, server.getServerId(), MAX_REPLICATION_RETRIES, e.getMessage());
                 // Server will sync this file when it comes online via ServerSyncService
             }
