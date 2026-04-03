@@ -6,7 +6,7 @@ A distributed file storage system demonstrating Primary-Backup Replication with 
 - IT24103461 – Ariyasena K P D H      [it24103461@my.sliit.lk]
 - IT24103465 – Sooriyapperuma S W H P [it24103465@my.sliit.lk]
 - IT24101022 – Mannapperuma M A S K M [it24101022@my.sliit.lk]
-- IT24101867 – Dissanayake D S M T    [it24101867@my.sliit.lk]
+- IT24101867 – Dissanayake D M S T    [it24101867@my.sliit.lk]
 
 ## 🚀 Quick Start
 
