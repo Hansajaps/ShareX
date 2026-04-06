@@ -12,6 +12,9 @@ import com.sharex.replication.ServerConfig;
 import com.sharex.zookeeper.ZooKeeperService;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
@@ -35,27 +38,28 @@ public class UIController {
     @Autowired
     private ZooKeeperService zooKeeperService;
 
+
     /**
-     * Serve the web UI index.html at the root path
-     * GET /
+     * Serve the dashboard index.html directly from the classpath to avoid 404s
      */
-    @GetMapping("/")
-    public ResponseEntity<?> serveIndex() {
+    @GetMapping({"/", "/index.html"})
+    @ResponseBody
+    public ResponseEntity<String> serveIndex() {
         try {
-            // Get the classpath resource for index.html
-            String indexContent = new String(Files.readAllBytes(
-                    Paths.get(getClass().getClassLoader().getResource("static/index.html").toURI())));
+            org.springframework.core.io.ClassPathResource resource = new org.springframework.core.io.ClassPathResource("static/index.html");
+            byte[] bdata = org.springframework.util.FileCopyUtils.copyToByteArray(resource.getInputStream());
+            String data = new String(bdata, java.nio.charset.StandardCharsets.UTF_8);
             return ResponseEntity.ok()
-                    .header("Content-Type", "text/html; charset=UTF-8")
-                    .body(indexContent);
-        } catch (Exception e) {
-            logger.error("Failed to serve index.html", e);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body("<html><body><h1>Error loading UI</h1><p>" + e.getMessage() + "</p></body></html>");
+                    .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "text/html")
+                    .body(data);
+        } catch (java.io.IOException e) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
+                    .body("<h1>Error: Could not load index.html from classpath</h1><p>" + e.getMessage() + "</p>");
         }
     }
 
     /**
+     * Internal endpoint - Get only files from current server (no recursion)
      * Internal endpoint - Get only files from current server (no recursion)
      * GET /internal/files
      */
@@ -220,7 +224,7 @@ public class UIController {
             return ResponseEntity.ok(Map.of(
                     "currentServer", clusterConfig.getCurrentServer().getServerId(),
                     "isLeader", clusterConfig.isCurrentServerLeader(),
-                    "leader", clusterConfig.getLeader().getServerId(),
+                    "leader", clusterConfig.getLeader() != null ? clusterConfig.getLeader().getServerId() : "electing...",
                     "zkConnected", zooKeeperService.isConnected(),
                     "allServers", clusterConfig.getAllServers().stream()
                             .map(s -> Map.of(

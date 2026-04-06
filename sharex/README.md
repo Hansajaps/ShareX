@@ -6,7 +6,7 @@ A distributed file storage system demonstrating Primary-Backup Replication with 
 - IT24103461 – Ariyasena K P D H      [it24103461@my.sliit.lk]
 - IT24103465 – Sooriyapperuma S W H P [it24103465@my.sliit.lk]
 - IT24101022 – Mannapperuma M A S K M [it24101022@my.sliit.lk]
-- IT24101867 – Dissanayake D S M T    [it24101867@my.sliit.lk]
+- IT24101867 – Dissanayake D M S T    [it24101867@my.sliit.lk]
 
 ## 🚀 Quick Start
 
@@ -15,6 +15,41 @@ A distributed file storage system demonstrating Primary-Backup Replication with 
 - **Maven 3.8+** installed
 - **ZooKeeper** installed and running (`zkServer.cmd` for Windows)
 - **3 terminal windows** for running 3 servers
+
+### ZooKeeper Cluster Setup
+
+**About `start-zk-cluster.bat`:**
+
+This script starts a **3-node ZooKeeper Ensemble** required for distributed consensus in ShareX:
+
+- Launches **3 independent ZooKeeper servers** using config files:
+  - `zoo1.cfg` → Node 1
+  - `zoo2.cfg` → Node 2
+  - `zoo3.cfg` → Node 3
+- Stops any existing Java processes before starting
+- Runs all nodes in parallel (background)
+- Waits 20 seconds for cluster to stabilize
+
+**Why needed:**
+ShareX uses ZooKeeper for distributed consensus (RAFT system). The 3-node cluster ensures:
+- ✓ High availability
+- ✓ Data replication across servers
+- ✓ Leader election
+- ✓ Fault tolerance
+
+**How to run:**
+```powershell
+# Windows
+start-zk-cluster.bat
+
+# Linux/Mac
+bash start-zk-cluster.sh
+```
+
+**Important Note:** The script contains a hardcoded path to ZooKeeper installation. Update the path in the script if your ZooKeeper is installed elsewhere:
+```batch
+set CP=C:\zookeeper\apache-zookeeper-3.8.6-bin\lib\*
+```
 
 ### Build
 ```bash
@@ -337,5 +372,74 @@ Result: All 3 servers have file1.txt ✅
 ✅ **Automatic** - No manual intervention needed  
 ✅ **Consistent** - All servers always have all files
 
+---
 
+# 🤖 Raft Consensus Algorithm - Technical Report
 
+## 📋 Executive Summary
+This report documents the implementation of a **Raft-based consensus mechanism** for the ShareX distributed file storage system. The implementation provides strong consistency guarantees, fault tolerance, and high availability for distributed file operations.
+
+### **Key Achievements**
+- ✅ Complete Raft consensus algorithm implementation
+- ✅ Leader election with automatic failover
+- ✅ Log replication with strong consistency
+- ✅ Fault detection and recovery mechanisms
+
+## 🏗️ Architecture Overview
+### **Core Raft Components**
+1. **RaftNode** - Main consensus coordinator
+2. **RaftLog** - Thread-safe replicated log
+3. **RaftRPCService** - Inter-node communication
+4. **RaftStateMachine** - Command execution
+
+## 🔄 Raft Algorithm Implementation
+### **1. Leader Election**
+- Nodes start as **Followers** with random election timeout (150-300ms)
+- If timeout expires without leader heartbeat → become **Candidate**
+- Candidate increments term, votes for self, requests votes from others
+- If receives majority votes → becomes **Leader**
+
+### **2. Log Replication**
+- Client sends command to leader
+- Leader appends to local log
+- Leader replicates to followers via AppendEntries RPC
+- Followers acknowledge receipt
+- Leader commits when majority acknowledges
+
+---
+
+# 🚀 Raft Consensus Implementation - Setup Guide
+
+## 🛠️ Build and Run
+```bash
+# Build the project
+mvn clean package
+
+# Start all servers (automated)
+./run-all-servers.sh  # Linux/Mac
+# or
+run-all-servers.bat   # Windows
+```
+
+## 🧪 Testing the Raft Implementation
+### **1. Verify Raft status on any server**
+```bash
+curl http://localhost:8081/raft/status
+```
+
+### **2. Submit a command (Leader only)**
+```bash
+curl -X POST http://localhost:8081/raft/command \
+  -H "Content-Type: application/json" \
+  -d '{"command": "UPLOAD:test.txt", "data": "test-metadata"}'
+```
+
+### **3. View Raft log**
+```bash
+curl http://localhost:8081/raft/log
+```
+
+## 🔍 Troubleshooting
+- **No Leader Elected**: Check node connectivity and verify network settings in `application.yml`.
+- **Log Inconsistency**: Compare logs between nodes using the `/raft/log` endpoint.
+- **High RPC Failure Rate**: Check metrics via `/raft/metrics` and verify network stability.

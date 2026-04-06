@@ -29,25 +29,26 @@ public class ClusterConfig {
 
     /**
      * Get the leader/primary server.
-     * Uses ZooKeeper for dynamic leader election if available, otherwise falls back
-     * to hardcoded logic.
+     * ONLY uses ZooKeeper for dynamic leader election — no self-election fallback.
+     * Returns null if no consensus has been reached.
      */
     public ServerConfig getLeader() {
         if (zooKeeperService != null && zooKeeperService.isConnected()) {
             String leaderId = zooKeeperService.getLeader();
-            ServerConfig leader = serverById.get(leaderId);
-            if (leader != null) {
-                return leader;
+            if (leaderId != null) {
+                ServerConfig leader = serverById.get(leaderId);
+                if (leader != null) {
+                    return leader;
+                }
             }
+            return null; // ZK is connected but no leader yet — election in progress
         }
 
-        // Fallback: Use the static leader flag if set, otherwise default to current
-        // server
-        // to avoid always returning a potentially dead server1
+        // ZK not available — fall back to static leader config only (no self-promotion)
         return allServers.stream()
                 .filter(ServerConfig::isLeader)
                 .findFirst()
-                .orElse(currentServer);
+                .orElse(null); // null = no consensus, don't claim self
     }
 
     /**
@@ -55,6 +56,7 @@ public class ClusterConfig {
      */
     public List<ServerConfig> getFollowers() {
         ServerConfig leader = getLeader();
+        if (leader == null) return new ArrayList<>(allServers);
         return allServers.stream()
                 .filter(s -> !s.getServerId().equals(leader.getServerId()))
                 .toList();
@@ -62,13 +64,13 @@ public class ClusterConfig {
 
     /**
      * Check if current server is the leader.
+     * Requires ZooKeeper consensus — will NOT self-promote.
      */
     public boolean isCurrentServerLeader() {
         if (zooKeeperService != null && zooKeeperService.isConnected()) {
             return zooKeeperService.isCurrentServerLeader();
         }
-
-        // Fallback to static configuration
+        // Fallback: only allow if explicitly marked as leader in static config
         return currentServer.isLeader();
     }
 

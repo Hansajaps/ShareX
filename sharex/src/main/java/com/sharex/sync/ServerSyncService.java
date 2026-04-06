@@ -224,7 +224,7 @@ public class ServerSyncService {
      * Get file from leader server
      */
     private byte[] getFileFromLeader(String leaderUrl, String filename) throws Exception {
-        String encodedFilename = java.net.URLEncoder.encode(filename, java.nio.charset.StandardCharsets.UTF_8);
+        String encodedFilename = java.net.URLEncoder.encode(filename, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
         String url = leaderUrl + "/download?file=" + encodedFilename;
         HttpURLConnection connection = null;
 
