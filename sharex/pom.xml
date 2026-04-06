@@ -71,6 +71,32 @@
             </exclusions>
         </dependency>
 
+        <!-- Metrics Core for ZooKeeper Server -->
+        <dependency>
+            <groupId>io.dropwizard.metrics</groupId>
+            <artifactId>metrics-core</artifactId>
+            <version>4.2.19</version>
+        </dependency>
+
+        <!-- Snappy for ZooKeeper Snapshots -->
+        <dependency>
+            <groupId>org.xerial.snappy</groupId>
+            <artifactId>snappy-java</artifactId>
+            <version>1.1.10.5</version>
+        </dependency>
+
+        <!-- Jetty for ZooKeeper Admin Server -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>11.0.18</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-servlet</artifactId>
+            <version>11.0.18</version>
+        </dependency>
+
         <!-- Curator (ZooKeeper Client) -->
         <dependency>
             <groupId>org.apache.curator</groupId>
@@ -114,9 +140,6 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
-                <configuration>
-                    <mainClass>com.sharex.Application</mainClass>
-                </configuration>
             </plugin>
         </plugins>
     </build>

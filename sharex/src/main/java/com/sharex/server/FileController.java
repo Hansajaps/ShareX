@@ -51,6 +51,9 @@ public class FileController {
     @Autowired
     private TimeSyncService timeSyncService;
 
+    @Autowired
+    private com.sharex.consensus.RaftNode raftNode;
+
     // Mutex for each file to prevent concurrent writes
     private static final Map<String, Object> fileLocks = new ConcurrentHashMap<>();
 
@@ -81,8 +84,14 @@ public class FileController {
         logger.info("Upload request received for file: {}", filename);
 
         // CONSISTENCY CHECK: Only leader accepts writes
-        if (!clusterConfig.isCurrentServerLeader()) {
-            logger.warn("Write rejected: Server {} is not the leader", clusterConfig.getCurrentServer().getServerId());
+        // Check both ClusterConfig (ZooKeeper) and RaftNode for leadership
+        boolean isLeader = clusterConfig.isCurrentServerLeader() || raftNode.getState().isLeader();
+        
+        if (!isLeader) {
+            logger.warn("Write rejected: Server {} is not the leader (Raft: {}, ZK: {})", 
+                        clusterConfig.getCurrentServer().getServerId(),
+                        raftNode.getState().isLeader(),
+                        clusterConfig.isCurrentServerLeader());
             return ResponseEntity
                     .status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "This server is a follower. Only the leader accepts writes."));
@@ -114,7 +123,11 @@ public class FileController {
                     });
                 }
 
-                // Step 3: Register file metadata in ZooKeeper
+                // Step 3: Log operation in Raft consensus log (Member 4 responsibility)
+                logger.info("Submitting UPLOAD command to Raft consensus log for {}", filename);
+                raftNode.submitCommand("UPLOAD:" + filename, "size=" + fileData.getSize());
+
+                // Step 4: Register file metadata in ZooKeeper
                 logger.info("Registering file {} metadata in ZooKeeper", filename);
                 zooKeeperService.registerFileMetadata(filename, fileData.getSize(), timeSyncService.getCurrentTime());
             }
@@ -247,12 +260,27 @@ public class FileController {
      */
     @GetMapping("/status")
     public ResponseEntity<?> serverStatus() {
+        if (zooKeeperService.isSimulatedCrash()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+
+        String raftLeaderId = raftNode.getState().getLeaderId();
+        ServerConfig zkLeaderConfig = clusterConfig.getLeader();
+        // Safe fallback: never NPE when no leader has been elected yet
+        String displayLeaderId = (raftLeaderId != null) ? raftLeaderId
+                : (zkLeaderConfig != null ? zkLeaderConfig.getServerId() : "electing...");
+
         return ResponseEntity.ok(Map.of(
                 "serverId", clusterConfig.getCurrentServer().getServerId(),
                 "port", clusterConfig.getCurrentServer().getPort(),
-                "isLeader", clusterConfig.isCurrentServerLeader(),
+                "isLeader", raftNode.getState().isLeader() || clusterConfig.isCurrentServerLeader(),
+                "raftIsLeader", raftNode.getState().isLeader(),
+                "zkIsLeader", clusterConfig.isCurrentServerLeader(),
+                "zkConnected", zooKeeperService.isConnected(),
                 "storagePath", clusterConfig.getCurrentServer().getStoragePath(),
-                "leaderId", clusterConfig.getLeader().getServerId()));
+                "leaderId", displayLeaderId,
+                "raftState", raftNode.getState().getState().toString(),
+                "raftTerm", raftNode.getState().getCurrentTerm()));
     }
 
     /**
@@ -390,5 +418,17 @@ public class FileController {
                 // Server will sync this file when it comes online via ServerSyncService
             }
         }
+    }
+
+    @PostMapping("/api/admin/crash")
+    public ResponseEntity<?> crashServer() {
+        zooKeeperService.simulateCrash();
+        return ResponseEntity.ok(Map.of("message", "Server " + clusterConfig.getCurrentServer().getServerId() + " successfully crashed."));
+    }
+
+    @PostMapping("/api/admin/recover")
+    public ResponseEntity<?> recoverServer() {
+        zooKeeperService.recoverFromCrash();
+        return ResponseEntity.ok(Map.of("message", "Server " + clusterConfig.getCurrentServer().getServerId() + " successfully recovered."));
     }
 }

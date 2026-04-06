@@ -28,6 +28,7 @@ public class ZooKeeperService {
     private static final String ELECTION_PATH = "/sharex/election";
     private static final String FILES_PATH = "/sharex/files";
     private static final String SERVER_SYNC_PATH = "/sharex/server-sync";
+    public static final String RAFT_STATE_PATH = "/sharex/raft/state";
 
     // ZooKeeper connection string for 3-node cluster
     // If only one ZooKeeper is running, it will default to localhost:2181
@@ -87,9 +88,9 @@ public class ZooKeeperService {
 
             client = CuratorFrameworkFactory.builder()
                     .connectString(ZK_CLUSTER_HOSTS)
-                    .retryPolicy(new ExponentialBackoffRetry(1000, 10))
-                    .connectionTimeoutMs(5000)
-                    .sessionTimeoutMs(10000)
+                    .retryPolicy(new ExponentialBackoffRetry(500, 3))
+                    .connectionTimeoutMs(3000)   // Detect dead nodes faster
+                    .sessionTimeoutMs(4000)      // Trigger re-election within 4s
                     .build();
 
             // Add listener to initialize once connected
@@ -123,6 +124,7 @@ public class ZooKeeperService {
             createPathIfNotExists(ELECTION_PATH);
             createPathIfNotExists(FILES_PATH);
             createPathIfNotExists(SERVER_SYNC_PATH);
+            createPathIfNotExists(RAFT_STATE_PATH);
 
             // Register this server
             registerServer();
@@ -255,6 +257,61 @@ public class ZooKeeperService {
         } catch (Exception e) {
             logger.debug("Could not remove file metadata from ZooKeeper", e);
         }
+    }
+
+    /**
+     * Save Raft Consensus State (Term and VotedFor) to ZooKeeper.
+     * Format: currentTerm|votedFor
+     */
+    public void saveRaftState(String serverId, int term, String votedFor) {
+        if (!zkConnected) return;
+        try {
+            String path = RAFT_STATE_PATH + "/" + serverId;
+            String data = term + "|" + (votedFor != null ? votedFor : "null");
+            
+            if (client.checkExists().forPath(path) != null) {
+                client.setData().forPath(path, data.getBytes(StandardCharsets.UTF_8));
+            } else {
+                client.create().creatingParentsIfNeeded().forPath(path, data.getBytes(StandardCharsets.UTF_8));
+            }
+            logger.debug("Saved Raft state for {} in ZooKeeper: {}", serverId, data);
+        } catch (Exception e) {
+            logger.error("Failed to save Raft state to ZooKeeper for node {}", serverId, e);
+        }
+    }
+
+    /**
+     * Get Raft Consensus State from ZooKeeper.
+     */
+    public String getRaftState(String serverId) {
+        if (!zkConnected) return null;
+        try {
+            String path = RAFT_STATE_PATH + "/" + serverId;
+            if (client.checkExists().forPath(path) != null) {
+                byte[] data = client.getData().forPath(path);
+                return new String(data, StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            logger.debug("No Raft state found in ZooKeeper for node {}", serverId);
+        }
+        return null;
+    }
+
+    /**
+     * Get data for a specific server from /sharex/servers/
+     */
+    public String getServerUrl(String serverId) {
+        if (!zkConnected) return null;
+        try {
+            String path = SERVERS_PATH + "/" + serverId;
+            if (client.checkExists().forPath(path) != null) {
+                byte[] data = client.getData().forPath(path);
+                return new String(data, StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            logger.debug("Could not find server URL in ZooKeeper for node {}", serverId);
+        }
+        return null;
     }
 
     /**
@@ -464,9 +521,6 @@ public class ZooKeeperService {
         this.syncCallback = callback;
     }
 
-    /**
-     * Close ZooKeeper connection
-     */
     public void stop() {
         try {
             if (leaderSelector != null) {
@@ -481,5 +535,46 @@ public class ZooKeeperService {
         } catch (Exception e) {
             logger.error("Error closing ZooKeeper connection", e);
         }
+    }
+
+    private boolean simulatedCrash = false;
+
+    public void simulateCrash() {
+        if (!simulatedCrash) {
+            logger.warn("💥 SIMULATION: Crashing Server {} - disconnecting ZooKeeper", serverId);
+            simulatedCrash = true;
+            // If we are the leader, explicitly clear the leader node so followers
+            // know to start a new election immediately (instead of waiting for session expiry)
+            if (isLeader.get()) {
+                try {
+                    if (client != null && client.getZookeeperClient().isConnected()) {
+                        if (client.checkExists().forPath(LEADER_PATH) != null) {
+                            client.delete().forPath(LEADER_PATH);
+                            logger.info("Cleared ZooKeeper leader node to trigger re-election");
+                        }
+                    }
+                } catch (Exception e) {
+                    logger.warn("Could not clear leader node during crash simulation", e);
+                }
+                if (leaderCallback != null) {
+                    leaderCallback.onLeadershipLost();
+                }
+            }
+            isLeader.set(false);
+            zkConnected = false;
+            stop(); // Close session — triggers ZooKeeper to release all ephemeral nodes
+        }
+    }
+
+    public void recoverFromCrash() {
+        if (simulatedCrash) {
+            logger.info("🔧 SIMULATION: Recovering Server {} - reconnecting ZooKeeper", serverId);
+            simulatedCrash = false;
+            start(); // Re-initialize client
+        }
+    }
+
+    public boolean isSimulatedCrash() {
+        return simulatedCrash;
     }
 }

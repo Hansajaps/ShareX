@@ -122,10 +122,57 @@
             display: inline-block;
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
-            padding: 5px 10px;
+            padding: 5px 15px;
             border-radius: 20px;
             font-size: 0.8em;
             margin-top: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .follower-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #00b894, #00cec9);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            margin-top: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .zk-connected-badge {
+            display: inline-block;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7em;
+            margin-top: 6px;
+            font-weight: 600;
+        }
+
+        .zk-disconnected-badge {
+            display: inline-block;
+            background: #fce4ec;
+            color: #c62828;
+            border: 1px solid #ef9a9a;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7em;
+            margin-top: 6px;
+            font-weight: 600;
+        }
+
+        .electing-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #f6d365, #fda085);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            margin-top: 10px;
+            animation: pulse 1s infinite;
         }
 
         @keyframes pulse {
@@ -361,6 +408,85 @@
             display: block;
         }
 
+        /* Raft Consensus Tab Styles */
+        .raft-info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .raft-card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 5px;
+        }
+
+        .raft-card h4 {
+            margin-bottom: 10px;
+            color: #764ba2;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .raft-card p {
+            font-size: 0.9em;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        .code-snippet {
+            background: #2d3436;
+            color: #fab1a0;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85em;
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+
+        .safety-list {
+            list-style: none;
+            margin-top: 10px;
+        }
+
+        .safety-list li {
+            font-size: 0.9em;
+            margin-bottom: 8px;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .safety-list li::before {
+            content: "✓";
+            color: #4caf50;
+            position: absolute;
+            left: 0;
+            font-weight: bold;
+        }
+
+        .role-badge-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+
+        .role-tag {
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+            color: white;
+        }
+
+        .tag-leader { background: #6c5ce7; }
+        .tag-follower { background: #00b894; }
+        .tag-candidate { background: #e17055; }
+
         .copyable-link {
             cursor: pointer;
             color: #1e88e5;
@@ -522,8 +648,7 @@
                 </div>
                 <button onclick="uploadFile()">Upload to Leader</button>
                 <p style="margin-top: 15px; color: #666; font-size: 0.9em;">
-                    Files are automatically replicated to all servers for consistency. NOTE: Make sure files uploaded do
-                    not contain spaces in between names.
+                    Files are automatically replicated to all servers for consistency.
                 </p>
             </div>
 
@@ -555,6 +680,7 @@
             <div class="tab-buttons">
                 <button class="tab-btn active" onclick="switchTab('files')">Files</button>
                 <button class="tab-btn" onclick="switchTab('info')">System Info</button>
+                <button class="tab-btn" onclick="switchTab('raft-consensus')">Consensus & Algorithms</button>
             </div>
 
                 <div id="files" class="tab-content active">
@@ -589,6 +715,81 @@
                     </ul>
                 </div>
             </div>
+
+            <div id="raft-consensus" class="tab-content">
+                <div style="text-align: center; margin-bottom: 25px;">
+                    <h3 style="color: #333;">Raft Consensus Architecture</h3>
+                    <p class="subtitle">Strong Consistency & Distributed Agreement Module</p>
+                    <div class="role-badge-group">
+                        <span class="role-tag tag-leader">Leader</span>
+                        <span class="role-tag tag-follower">Follower</span>
+                        <span class="role-tag tag-candidate">Candidate</span>
+                    </div>
+                </div>
+
+                <!-- LIVE METRICS BOARD -->
+                <div class="raft-card" style="margin-bottom: 20px; border-left-color: #00bcd4; background: #e0f7fa;">
+                    <h4 style="color: #00838f;">📊 Live Consensus Metrics</h4>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; text-align: center;">
+                        <div>
+                            <div style="font-size: 0.8em; color: #555;">Current Term</div>
+                            <div id="rmTerm" style="font-size: 1.5em; font-weight: bold; color: #00838f;">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8em; color: #555;">Server 1 State</div>
+                            <div id="rmState1" style="font-size: 1.25em; font-weight: bold; color: #00838f;">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8em; color: #555;">Server 2 State</div>
+                            <div id="rmState2" style="font-size: 1.25em; font-weight: bold; color: #00838f;">-</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 0.8em; color: #555;">Server 3 State</div>
+                            <div id="rmState3" style="font-size: 1.25em; font-weight: bold; color: #00838f;">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="raft-info-grid">
+                    <div class="raft-card">
+
+                        <h4>🔄 1. Leader Election</h4>
+                        <p>Nodes use randomized election timeouts (150-300ms) to trigger elections. A Candidate becomes Leader by receiving majority votes in a specific 'Term'.</p>
+                        <div class="code-snippet">
+                            if (electionTimeout) {<br>
+                            &nbsp;&nbsp;becomeCandidate();<br>
+                            &nbsp;&nbsp;requestVotes();<br>
+                            }
+                        </div>
+                    </div>
+                    <div class="raft-card">
+                        <h4>📝 2. Log Replication</h4>
+                        <p>The Leader accepts client commands, appends them to its log, and replicates them to Followers via AppendEntries RPCs. Committed once majority acknowledges.</p>
+                        <div class="code-snippet">
+                            replicate(entry);<br>
+                            if (majorityAck) {<br>
+                            &nbsp;&nbsp;commitEntry(index);<br>
+                            }
+                        </div>
+                    </div>
+                    <div class="raft-card">
+                        <h4>⚖️ Safety Properties</h4>
+                        <ul class="safety-list">
+                            <li><strong>Election Safety:</strong> At most one leader per term.</li>
+                            <li><strong>Log Matching:</strong> Continuous log continuity check.</li>
+                            <li><strong>Leader Completeness:</strong> Leader has all committed entries.</li>
+                        </ul>
+                    </div>
+                    <div class="raft-card">
+                        <h4>🛡️ Fault Tolerance</h4>
+                        <ul class="safety-list">
+                            <li><strong>Automatic Failover:</strong> Rapid re-election on leader loss.</li>
+                            <li><strong>ZK Fallback:</strong> Operates even if ZooKeeper fails.</li>
+                            <li><strong>State Recovery:</strong> Persistent log for crash recovery.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -596,6 +797,7 @@
         let API_BASE = window.location.origin;
         let currentLeaderUrl = API_BASE;
         let activeApiUrl = API_BASE;
+        let isSyncing = false; // Prevent overlapping sync requests
 
         // --- Time Sync Network Optimization ---
         // Instead of making 80 HTTP requests per second (which exhausts Tomcat's connection pool),
@@ -640,81 +842,85 @@
 
         // Function to discover and update the current leader
         async function updateLeader() {
+            if (isSyncing) return;
+            isSyncing = true;
+
             const servers = ['http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083'];
             let found = false;
 
-            for (const serverUrl of servers) {
+            // Priority 1: Check the same origin we are on (don't hardcode localhost if user is remote)
+            const origins = [window.location.origin, ...servers.filter(s => s !== window.location.origin)];
+
+            for (const serverUrl of origins) {
                 try {
-                    // Manual timeout for better compatibility
                     const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 2000);
+                    const timeoutId = setTimeout(() => controller.abort(), 1500);
 
                     const response = await fetch(`${serverUrl}/api/leader`, { signal: controller.signal });
                     clearTimeout(timeoutId);
 
                     if (response.ok) {
                         const data = await response.json();
-                        currentLeaderUrl = data.leaderUrl;
+                        currentLeaderUrl = data.leaderUrl || serverUrl;
                         activeApiUrl = serverUrl;
                         API_BASE = serverUrl;
                         updateStatusDisplay(data);
                         found = true;
                         
-                        // Check if the current browser window is pointing to the leader server
                         const timeSyncContainer = document.getElementById('timeSyncContainer');
                         if (timeSyncContainer) {
                              if (data.leaderUrl && window.location.origin === data.leaderUrl) {
-                                 timeSyncContainer.style.borderLeftColor = '#ff9800'; // Gold/Orange for leader
+                                 timeSyncContainer.style.borderLeftColor = '#ff9800'; 
                              } else {
-                                 timeSyncContainer.style.borderLeftColor = '#667eea'; // Standard Blue for follower
+                                 timeSyncContainer.style.borderLeftColor = '#667eea'; 
                              }
                         }
-                        
                         break;
                     }
-                } catch (e) {
-                    // Continue to next server
-                }
+                } catch (e) { /* silent fail for discovery */ }
             }
 
             if (!found) {
-                console.warn('Could not reach any server to determine leader');
+                document.getElementById('statusValue').innerHTML = '<span style="color:#f44336">Disconnected</span>';
+                console.warn('❌ Could not reach any server to determine leader');
             }
+            isSyncing = false;
         }
 
         // Time Synchronization UI Updater
         async function updateTimeSync() {
             try {
-                // Fetch main clock with strict timeout to prevent hung requests
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 2000);
                 
-                const [pRes, lRes] = await Promise.all([
+                const responses = await Promise.allSettled([
                     fetch(`${API_BASE}/api/time/physical`, { signal: controller.signal }),
                     fetch(`${API_BASE}/api/time/logical`, { signal: controller.signal })
                 ]);
                 clearTimeout(timeoutId);
 
-                if (pRes.ok && lRes.ok) {
-                    const physical = await pRes.json();
-                    const logical = await lRes.json();
+                // Handle main clock
+                if (responses[0].status === 'fulfilled' && responses[0].value.ok && 
+                    responses[1].status === 'fulfilled' && responses[1].value.ok) {
+                    
+                    const physical = await responses[0].value.json();
+                    const logical = await responses[1].value.json();
                     const offset = logical - physical;
 
-                    // Sync the interpolator logical clock state
                     localLogicalTime = logical;
-
-                    // Update Average Offset (from this node's view)
                     const offsetEl = document.getElementById('offsetValue');
                     if (offsetEl) {
                         offsetEl.innerText = (offset >= 0 ? '+' : '') + offset + 'ms';
-                        
                         if (Math.abs(offset) > 100) offsetEl.style.backgroundColor = '#ffebee', offsetEl.style.color = '#f44336';
                         else if (Math.abs(offset) > 10) offsetEl.style.backgroundColor = '#fff3e0', offsetEl.style.color = '#ff9800';
                         else offsetEl.style.backgroundColor = '#e3f2fd', offsetEl.style.color = '#1976d2';
                     }
+                } else {
+                    // If backend unavailable, initialize from local clock if not already running
+                    if (localLogicalTime === 0) localLogicalTime = Date.now();
                 }
 
-                // Sub-routine: Fetch times from all servers concurrently
+                // Sub-routine: Fetch times from all servers
                 const clusterNodes = [
                     { id: 's1', url: 'http://localhost:8081' },
                     { id: 's2', url: 'http://localhost:8082' },
@@ -723,43 +929,39 @@
 
                 clusterNodes.forEach(node => {
                     const c = new AbortController();
-                    const t = setTimeout(() => c.abort(), 2000);
+                    const t = setTimeout(() => c.abort(), 1500);
+                    
                     Promise.all([
                         fetch(`${node.url}/api/time/physical`, { signal: c.signal }),
                         fetch(`${node.url}/api/time/logical`, { signal: c.signal })
-                    ]).then(async ([nodePhysicalReq, nodeLogicalReq]) => {
+                    ]).then(async ([nodePReq, nodeLReq]) => {
                         clearTimeout(t);
-                        if(nodePhysicalReq.ok && nodeLogicalReq.ok) {
-                            const pTime = await nodePhysicalReq.json();
-                            const lTime = await nodeLogicalReq.json();
-                            const nodeOffset = lTime - pTime;
+                        if(nodePReq.ok && nodeLReq.ok) {
+                            const pTime = await nodePReq.json();
+                            const lTime = await nodeLReq.json();
+                            const nOffset = lTime - pTime;
                             
-                            // Sync interpolator
                             if (node.id === 's1') s1PhysTime = pTime;
                             if (node.id === 's2') s2PhysTime = pTime;
                             if (node.id === 's3') s3PhysTime = pTime;
                             
                             const offEl = document.getElementById(`${node.id}Offset`);
                             if (offEl) {
-                                const offsetStr = (nodeOffset >= 0 ? '+' : '') + nodeOffset + 'ms';
-                                offEl.innerHTML = `Adj: <span style="font-weight:bold; color:${Math.abs(nodeOffset) > 50 ? '#f44336' : '#2e7d32'}">${offsetStr}</span>`;
+                                const offsetStr = (nOffset >= 0 ? '+' : '') + nOffset + 'ms';
+                                offEl.innerHTML = `Adj: <span style="font-weight:bold; color:${Math.abs(nOffset) > 50 ? '#f44336' : '#2e7d32'}">${offsetStr}</span>`;
                             }
-                        }
-                    }).catch(e => {
-                        // Mark OFFLINE and stop its clock from spinning
+                        } else { throw new Error("404 Not Found"); }
+                    }).catch(() => {
                         if (node.id === 's1') s1PhysTime = 0;
                         if (node.id === 's2') s2PhysTime = 0;
                         if (node.id === 's3') s3PhysTime = 0;
-                        
-                        const timeEl = document.getElementById(`${node.id}Time`);
-                        const offEl = document.getElementById(`${node.id}Offset`);
-                        if(timeEl) timeEl.innerHTML = `<span style="color:#f44336; font-size:0.9em">OFFLINE</span>`;
-                        if(offEl) offEl.innerHTML = `Adj: <span style="font-weight:bold; color:#f44336">-</span>`;
+                        const tEl = document.getElementById(`${node.id}Time`);
+                        const oEl = document.getElementById(`${node.id}Offset`);
+                        if(tEl) tEl.innerHTML = `<span style="color:#f44336; font-size:0.9em">OFFLINE</span>`;
+                        if(oEl) oEl.innerHTML = `Adj: <span style="font-weight:bold; color:#f44336">-</span>`;
                     });
                 });
-            } catch (e) {
-                // Update skip
-            }
+            } catch (e) { console.error("Time Sync Logic Error:", e); }
         }
 
         // Update the status display with leader information
@@ -916,31 +1118,56 @@
                         // A node disconnected from ZK might locally fall back to "I am the leader" from properties.
                         // We strictly override individual opinions with the consensus 'trueLeaderId' if known.
                         const isLeader = trueLeaderId ? (data.serverId === trueLeaderId || server.id === trueLeaderId) : data.isLeader;
-                        return { server, status: 'Online', isLeader };
+                        return { server, status: 'Online', isLeader, rawData: data };
                     }
                 } catch (e) { }
-                return { server, status: 'Offline', isLeader: false };
+                return { server, status: 'Offline', isLeader: false, rawData: null };
             }));
 
             // 3. Render maintaining strict order
             let html = '';
             results.forEach(res => {
                 if (res.status === 'Online') {
+                    const isLeader = res.rawData && (res.rawData.zkIsLeader || res.rawData.raftIsLeader);
+                    const zkOk = res.rawData && res.rawData.zkConnected;
+                    const zkBadge = zkOk
+                        ? '<div class="zk-connected-badge">🔗 ZK Connected</div>'
+                        : '<div class="zk-disconnected-badge">⚠️ ZK Disconnected</div>';
+                    let roleBadge;
+                    const raftState = res.rawData ? res.rawData.raftState : '';
+                    if (isLeader) {
+                        roleBadge = '<div class="leader-badge">LEADER</div>';
+                    } else if (raftState === 'CANDIDATE' || (res.rawData && res.rawData.leaderId === 'electing...')) {
+                        roleBadge = '<div class="electing-badge">⟳ ELECTING...</div>';
+                    } else {
+                        roleBadge = '<div class="follower-badge">FOLLOWER</div>';
+                    }
                     html += `
                         <div class="server-card">
-                            <h3>${res.server.name}</h3>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                <h3>${res.server.name}</h3>
+                                <button onclick="toggleServerState('${res.server.url}', 'crash')" title="Simulate Crash" style="background:transparent; border:none; cursor:pointer; padding:0; outline:none; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f44336" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                                </button>
+                            </div>
                             <div class="server-id">Port: ${res.server.port}</div>
                             <div>
                                 <span class="status-indicator status-online"></span>
                                 <span class="status-text">Online</span>
                             </div>
-                            ${res.isLeader ? '<div class="leader-badge">LEADER</div>' : '<div style="color: #999; font-size: 0.9em; margin-top: 10px;">Follower</div>'}
+                            ${roleBadge}
+                            ${zkBadge}
                         </div>
                     `;
                 } else {
                     html += `
                         <div class="server-card" style="opacity: 0.7;">
-                            <h3>${res.server.name}</h3>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                                <h3>${res.server.name}</h3>
+                                <button onclick="toggleServerState('${res.server.url}', 'recover')" title="Recover Server" style="background:transparent; border:none; cursor:pointer; padding:0; outline:none; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.1)'" onmouseout="this.style.transform='scale(1)'">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4caf50" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                                </button>
+                            </div>
                             <div class="server-id">Port: ${res.server.port}</div>
                             <div>
                                 <span class="status-indicator status-offline"></span>
@@ -951,6 +1178,35 @@
                 }
             });
             statusBar.innerHTML = html;
+            
+            // 4. Update Live Raft Metrics on the UI
+            let maxTerm = 0;
+            results.forEach((res, index) => {
+                const serverIdx = index + 1; // 1, 2, or 3
+                const stateEl = document.getElementById(`rmState${serverIdx}`);
+                if (stateEl) {
+                    if (res.status === 'Online' && res.rawData) {
+                        stateEl.innerText = res.rawData.raftState || 'ONLINE';
+                        stateEl.style.color = '#00838f'; // reset color
+                        // Keep track of the highest term seen across all online nodes
+                        if (res.rawData.raftTerm > maxTerm) {
+                            maxTerm = res.rawData.raftTerm;
+                        }
+                    } else {
+                        stateEl.innerText = 'OFFLINE';
+                        stateEl.style.color = '#f44336';
+                    }
+                }
+            });
+            // Only show max term if at least one node is online and reporting a term
+            const termEl = document.getElementById('rmTerm');
+            if (termEl) {
+                if (maxTerm > 0) {
+                    termEl.innerText = maxTerm;
+                } else if (!results.some(r => r.status === 'Online')) {
+                    termEl.innerText = '-';
+                }
+            }
         }
 
         async function uploadFile() {
@@ -995,7 +1251,16 @@
                     }
                 }
 
-                if (!response.ok) throw new Error('Upload failed');
+                if (!response.ok) {
+                    let errorMessage = 'Upload failed';
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.error) errorMessage = errorData.error;
+                    } catch (e) {
+                         errorMessage = `Server Error: ${response.status} ${response.statusText}`;
+                    }
+                    throw new Error(errorMessage);
+                }
 
                 const data = await response.json();
                 const downloadUrl = `${activeApiUrl}/download?file=${encodeURIComponent(file.name)}`;
@@ -1219,6 +1484,20 @@
             // Show selected tab
             document.getElementById(tab).classList.add('active');
             event.target.classList.add('active');
+        }
+
+        async function toggleServerState(url, action) {
+            try {
+                const response = await fetch(`${url}/api/admin/${action}`, { method: 'POST' });
+                if (response.ok) {
+                    showMessage(document.getElementById('uploadMessage'), `Server ${action === 'crash' ? 'crashed' : 'recovered'} successfully! It may take a couple seconds for consensus to stabilize.`, 'success');
+                    setTimeout(updateServerStatus, 500); 
+                } else {
+                    throw new Error("API returned " + response.status);
+                }
+            } catch (e) {
+                showMessage(document.getElementById('uploadMessage'), `Failed to ${action} server: ` + e.message, 'error');
+            }
         }
     </script>
 </body>

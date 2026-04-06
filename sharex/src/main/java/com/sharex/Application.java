@@ -3,14 +3,23 @@ package com.sharex;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.client.RestTemplate;
 import com.sharex.server.FileService;
 import com.sharex.server.FileServiceImpl;
 import com.sharex.replication.ClusterConfig;
 import com.sharex.replication.ServerConfig;
 import com.sharex.zookeeper.ZooKeeperService;
 import com.sharex.time.TimeSyncService;
+import com.sharex.consensus.RaftLog;
+import com.sharex.consensus.RaftNodeState;
+import com.sharex.consensus.RaftNode;
+import com.sharex.consensus.RaftRPCService;
+import com.sharex.consensus.RaftStateMachine;
+import com.sharex.consensus.RaftMetrics;
+import com.sharex.consensus.RaftFaultHandler;
 import org.springframework.context.annotation.Lazy;
 import java.io.File;
 import java.util.ArrayList;
@@ -28,6 +37,7 @@ import java.util.List;
  * java -jar sharex.jar server3 # Starts server3 on port 8083
  */
 @SpringBootApplication
+@EnableScheduling
 public class Application {
 
     private static String currentServerId = "server1"; // Default
@@ -56,6 +66,12 @@ public class Application {
         };
         System.setProperty("server.port", String.valueOf(port));
         System.out.println("Configured port: " + port);
+
+        // Configure multipart and post size limits programmatically (resilience)
+        System.setProperty("spring.servlet.multipart.max-file-size", "100MB");
+        System.setProperty("spring.servlet.multipart.max-request-size", "100MB");
+        System.setProperty("server.tomcat.max-http-form-post-size", "100MB");
+        System.setProperty("server.tomcat.max-swallow-size", "100MB");
 
         SpringApplication.run(Application.class, args);
     }
@@ -117,7 +133,8 @@ public class Application {
         ClusterConfig config = new ClusterConfig(currentServerConfig, allServers, zooKeeperService);
         System.out.println("\nCluster Configuration:");
         System.out.println("  Current Server: " + currentServerConfig.getServerId());
-        System.out.println("  Initial Leader: " + config.getLeader().getServerId());
+        ServerConfig initialLeader = config.getLeader();
+        System.out.println("  Initial Leader: " + (initialLeader != null ? initialLeader.getServerId() : "pending ZooKeeper election..."));
         System.out.println("  Followers: " + config.getFollowers().stream()
                 .map(ServerConfig::getServerId)
                 .toList());
@@ -139,18 +156,25 @@ public class Application {
      * Create ZooKeeper service for distributed coordination
      */
     @Bean
-    public ZooKeeperService zooKeeperService(ServerConfig serverConfig, @Lazy TimeSyncService timeSyncService) {
+    public ZooKeeperService zooKeeperService(ServerConfig serverConfig, @Lazy TimeSyncService timeSyncService, @Lazy RaftNodeState raftNodeState) {
         ZooKeeperService.LeaderElectionCallback callback = new ZooKeeperService.LeaderElectionCallback() {
             @Override
             public void onLeadershipGained() {
                 System.out.println("🎯 Server " + serverConfig.getServerId() + " has gained leadership!");
                 // Begin Berkeley Time Synchronization process
                 timeSyncService.startPeriodicSync();
+                // Synchronize Raft consensus to match ZooKeeper leadership
+                if (raftNodeState != null) {
+                    raftNodeState.becomeLeader();
+                }
             }
 
             @Override
             public void onLeadershipLost() {
                 System.out.println("💔 Server " + serverConfig.getServerId() + " has lost leadership!");
+                if (raftNodeState != null) {
+                    raftNodeState.becomeFollower();
+                }
             }
         };
 
@@ -177,6 +201,14 @@ public class Application {
     }
 
     /**
+     * RestTemplate for HTTP communication between Raft nodes
+     */
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+
+    /**
      * Helper method to get the storage path for a server.
      * Storage directories are created relative to project root.
      */
@@ -194,6 +226,71 @@ public class Application {
         }
 
         return storagePath;
+    }
+
+    // ==================== Raft Consensus Beans ====================
+    
+    /**
+     * Create Raft log for consensus operations.
+     */
+    @Bean
+    public RaftLog raftLog() {
+        return new RaftLog();
+    }
+    
+    /**
+     * Create Raft node state manager.
+     */
+    @Bean
+    public RaftNodeState raftNodeState(RaftLog raftLog, ZooKeeperService zooKeeperService) {
+        RaftNodeState state = new RaftNodeState(raftLog, 3, zooKeeperService); // 3-node cluster
+        state.setCurrentServerId(currentServerId);
+        state.loadInitialState();
+        return state;
+    }
+    
+    /**
+     * Create Raft RPC service for inter-node communication.
+     */
+    @Bean
+    public RaftRPCService raftRPCService() {
+        return new RaftRPCService();
+    }
+    
+    /**
+     * Create Raft state machine for applying committed operations.
+     */
+    @Bean
+    public RaftStateMachine raftStateMachine() {
+        return new RaftStateMachine();
+    }
+    
+    /**
+     * Create Raft metrics collector.
+     */
+    @Bean
+    public RaftMetrics raftMetrics() {
+        return new RaftMetrics();
+    }
+    
+    /**
+     * Create Raft fault handler.
+     */
+    @Bean
+    @Lazy
+    public RaftFaultHandler raftFaultHandler(@Lazy RaftNode raftNode, RaftMetrics raftMetrics) {
+        return new RaftFaultHandler(raftNode, raftMetrics);
+    }
+    
+    /**
+     * Create main Raft node.
+     */
+    @Bean
+    public RaftNode raftNode(RaftNodeState raftNodeState, RaftRPCService raftRPCService, 
+                            RaftStateMachine raftStateMachine, RaftMetrics raftMetrics) {
+        RaftNode node = new RaftNode(raftNodeState, raftRPCService, raftStateMachine, raftMetrics);
+        node.setCurrentServerId(currentServerId);
+        return node;
     }
 
 }
